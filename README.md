@@ -1,5 +1,10 @@
 # `confluence2md-mcp` - MCP Server for `confluence2md` Indexes
 
+[![CI](https://github.com/gkoos/confluence2md-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/gkoos/confluence2md-mcp/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/gkoos/confluence2md-mcp)](https://github.com/gkoos/confluence2md-mcp/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/gkoos/confluence2md-mcp/blob/main/LICENSE)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/gkoos/confluence2md-mcp)](https://github.com/gkoos/confluence2md-mcp/blob/main/go.mod)
+
 MCP server that exposes [confluence2md-indexer](https://github.com/gkoos/confluence2md-indexer) search to any MCP-compatible AI client. Runs as a local stdio server, queries a SQLite index built from [confluence2md](https://github.com/gkoos/confluence2md) exports, and returns ranked results with score metadata.
 
 ## Requirements
