@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/gkoos/confluence2md-mcp/compare/v0.2.0...v0.2.1) (2026-07-08)
+
+
+### Bug Fixes
+
+* remove GOPROXY from goreleaser before hook ([#3](https://github.com/gkoos/confluence2md-mcp/issues/3)) ([b20bb09](https://github.com/gkoos/confluence2md-mcp/commit/b20bb092137768ff11ae5748a3a526ea9df82189))
+
 ## [0.2.0](https://github.com/gkoos/confluence2md-mcp/compare/v0.1.0...v0.2.0) (2026-07-08)
 
 
