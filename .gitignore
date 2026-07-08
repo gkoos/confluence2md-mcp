@@ -1,0 +1,21 @@
+# Binaries
+/confluence2md-mcp
+/confluence2md-mcp.exe
+
+# Build artifacts
+dist/
+/bin/
+
+# Test artifacts
+coverage.out
+
+# DB files
+*.db
+*.db-shm
+*.db-wal
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

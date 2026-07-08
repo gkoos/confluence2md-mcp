@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__confluence2md__confluence_search"
+    ]
+  }
+}
