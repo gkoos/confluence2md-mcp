@@ -4,7 +4,7 @@ project_name: confluence2md-mcp
 
 before:
   hooks:
-    - GOPROXY=direct go mod download
+    - go mod download
 
 builds:
   - id: confluence2md-mcp
