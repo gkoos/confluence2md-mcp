@@ -2,6 +2,10 @@
 
 MCP server that exposes [confluence2md-indexer](https://github.com/gkoos/confluence2md-indexer) search to any MCP-compatible AI client. Runs as a local stdio server, queries a SQLite index built from [confluence2md](https://github.com/gkoos/confluence2md) exports, and returns ranked results with score metadata.
 
+## Part of the `confluence2md` Platform
+
+`confluence2md-mcp` is the third step in a three-tool local Confluence knowledge pipeline. It wraps a SQLite index built by [`confluence2md-indexer`](https://github.com/gkoos/confluence2md-indexer) (which indexes output from [`confluence2md`](https://github.com/gkoos/confluence2md)) and serves it to AI clients via MCP. See [docs/platform.md](docs/platform.md) for the full architecture.
+
 ## Requirements
 
 - A SQLite index built by [confluence2md-indexer](https://github.com/gkoos/confluence2md-indexer)
