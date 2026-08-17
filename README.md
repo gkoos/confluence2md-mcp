@@ -16,6 +16,16 @@ MCP server that exposes [confluence2md-indexer](https://github.com/gkoos/conflue
 - A SQLite index built by [confluence2md-indexer](https://github.com/gkoos/confluence2md-indexer)
 - Source content must use [`confluence2md`](https://github.com/gkoos/confluence2md) metadata format — other formats are not supported
 
+## Environment Variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `CONFLUENCE_INDEX_DB` | recommended | Path to the SQLite DB file. Falls back to `confluence2md-index.db` in the current working directory if unset. |
+| `OPENAI_API_KEY` | optional | If set, uses OpenAI embeddings for vector/hybrid search. If unset, falls back to hash embeddings (lower semantic quality, no cost). |
+| `OPENAI_EMBED_MODEL` | optional | OpenAI embedding model to use. Defaults to `text-embedding-3-small`. Only used when `OPENAI_API_KEY` is set. |
+
+> The embedding provider used at query time must match the one used during indexing. If you indexed with OpenAI embeddings, query with OpenAI; if you indexed with hash fallback, query with hash fallback. Mismatched providers will not cause errors but will produce poor vector search results.
+
 ## Installation
 
 Download the binary for your platform from [Releases](../../releases) and place it somewhere on your `PATH`.
@@ -78,7 +88,7 @@ Search indexed Confluence content from a local SQLite DB.
 | Argument | Required | Description |
 |---|---|---|
 | `query` | ✓ | Search query text |
-| `dbPath` | | Override DB path (defaults to `CONFLUENCE_INDEX_DB`) |
+| `dbPath` | | Override DB path. Falls back to `CONFLUENCE_INDEX_DB` env var, then to `confluence2md-index.db` in the current working directory. |
 | `mode` | | `hybrid` (default) \| `lexical` \| `vector` |
 | `fusion` | | `weighted` (default) \| `rrf` |
 | `alpha` | | Weighted fusion alpha `[0..1]`, default `0.70` |
@@ -93,7 +103,17 @@ Search indexed Confluence content from a local SQLite DB.
 | `fromDate` | | Lower bound `YYYY-MM-DD` |
 | `toDate` | | Upper bound `YYYY-MM-DD` |
 
-Response includes `schemaVersion`, `count`, `total`, and a `results` array with score breakdown per chunk.
+Response fields:
+
+| Field | Description |
+|---|---|
+| `schemaVersion` | Schema version string for contract stability |
+| `tool` | Always `"confluence.search"` |
+| `dbPath` | Resolved DB path used for the query |
+| `request` | Echoed request parameters |
+| `count` | Number of results returned in this response |
+| `total` | Total ranked results before pagination |
+| `results` | Array of result objects with chunk text and score breakdown |
 
 ## Development
 
