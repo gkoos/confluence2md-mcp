@@ -4,12 +4,12 @@ go 1.26.6
 
 require (
 	github.com/gkoos/confluence2md-indexer v0.5.0
+	github.com/glebarez/go-sqlite v1.22.0
 	github.com/mark3labs/mcp-go v0.55.1
 )
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/glebarez/go-sqlite v1.22.0 // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect

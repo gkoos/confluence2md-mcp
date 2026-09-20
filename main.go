@@ -109,18 +109,27 @@ func main() {
 			return mcp.NewToolResultError(queryError(effectiveDBPath, err)), nil
 		}
 
+		// An empty result set is an empty array rather than null, so a client can
+		// iterate the field without a nil check.
+		results := resp.Results
+		if results == nil {
+			results = []indexerapi.QueryResult{}
+		}
+
 		payload := map[string]any{
 			"schemaVersion": schemaVersion,
 			"tool":          "confluence.search",
 			"dbPath":        effectiveDBPath,
 			"request":       req,
-			"count":         len(resp.Results),
+			"count":         len(results),
 			"total":         resp.Total,
-			"results":       resp.Results,
+			"results":       results,
 		}
 		b, _ := json.MarshalIndent(payload, "", "  ")
 		return mcp.NewToolResultText(string(b)), nil
 	})
+
+	listSpacesTool(s, dbPath)
 
 	log.Printf("starting %s %s: dbPath=%s", serverName, version, dbPath)
 	if err := server.ServeStdio(s); err != nil {
