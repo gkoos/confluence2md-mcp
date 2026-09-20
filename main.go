@@ -7,13 +7,24 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/gkoos/confluence2md-indexer/pkg/indexerapi"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
-const schemaVersion = "1"
+// serverName is the display name an MCP client shows for this server.
+const serverName = "Confluence MCP"
+
+// version is the build identity reported to MCP clients and written to the
+// startup log. Release builds stamp it through ldflags; an unstamped build
+// reports "dev".
+var version = "dev"
+
+// schemaVersion mirrors the indexer's output contract, so a payload from this
+// server and one from the indexer describe themselves identically.
+const schemaVersion = indexerapi.OutputSchemaVersion
 
 func main() {
 	dbPath := os.Getenv("CONFLUENCE_INDEX_DB")
@@ -22,8 +33,8 @@ func main() {
 	}
 
 	s := server.NewMCPServer(
-		"Confluence MCP",
-		"0.1.0",
+		serverName,
+		version,
 		server.WithToolCapabilities(false),
 		server.WithRecovery(),
 	)
@@ -87,7 +98,7 @@ func main() {
 
 		resp, err := indexerapi.Query(ctx, effectiveDBPath, req)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("query failed: %v", err)), nil
+			return mcp.NewToolResultError(queryError(effectiveDBPath, err)), nil
 		}
 
 		payload := map[string]any{
@@ -103,11 +114,33 @@ func main() {
 		return mcp.NewToolResultText(string(b)), nil
 	})
 
-	log.Printf("starting MCP server: dbPath=%s", dbPath)
+	log.Printf("starting %s %s: dbPath=%s", serverName, version, dbPath)
 	if err := server.ServeStdio(s); err != nil {
 		log.Printf("server error: %v", err)
 		os.Exit(1)
 	}
+}
+
+// queryError explains the failures a caller can act on. The indexer reports what
+// is wrong; this adds what a client of this server can do about it.
+func queryError(dbPath string, err error) string {
+	message := fmt.Sprintf("query failed for %s: %v", dbPath, err)
+
+	switch {
+	case strings.Contains(message, "embedding mismatch:"):
+		return message + "\n\nThis index was built with a different embedding configuration than the query " +
+			"resolved. Set the CONFLUENCE2MD_EMBEDDING_* variables to match the provider used at index time, " +
+			"or retry with mode=lexical, which needs no embeddings."
+	case strings.Contains(message, "holds no embeddings"):
+		return message + "\n\nThis index carries no vectors. Rebuild it with an embedding provider, or use mode=lexical."
+	case strings.Contains(message, "holds no index yet"):
+		return message + "\n\nBuild the index first: confluence2md-indexer index <folder>."
+	case strings.Contains(message, "requires embeddings, but they are disabled"):
+		return message + "\n\nEmbeddings are switched off for this server. Unset CONFLUENCE2MD_EMBEDDING_SKIP " +
+			"(or select a provider) and retry, or use mode=lexical."
+	}
+
+	return message
 }
 
 func getString(args map[string]any, key, fallback string) string {
