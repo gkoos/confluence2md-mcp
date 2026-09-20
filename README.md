@@ -13,7 +13,7 @@ MCP server that exposes [confluence2md-indexer](https://github.com/gkoos/conflue
 
 ## Requirements
 
-- A SQLite index built by [confluence2md-indexer](https://github.com/gkoos/confluence2md-indexer)
+- A SQLite index built by [confluence2md-indexer](https://github.com/gkoos/confluence2md-indexer) **v0.5.0 or newer**
 - Source content must use [`confluence2md`](https://github.com/gkoos/confluence2md) metadata format — other formats are not supported
 
 ## Environment Variables
@@ -21,10 +21,29 @@ MCP server that exposes [confluence2md-indexer](https://github.com/gkoos/conflue
 | Variable | Required | Description |
 |---|---|---|
 | `CONFLUENCE_INDEX_DB` | recommended | Path to the SQLite DB file. Falls back to `confluence2md-index.db` in the current working directory if unset. |
-| `OPENAI_API_KEY` | optional | If set, uses OpenAI embeddings for vector/hybrid search. If unset, falls back to hash embeddings (lower semantic quality, no cost). |
-| `OPENAI_EMBED_MODEL` | optional | OpenAI embedding model to use. Defaults to `text-embedding-3-small`. Only used when `OPENAI_API_KEY` is set. |
+| `CONFLUENCE2MD_EMBEDDING_PROVIDER` | optional | `bow-local` (default: local, offline, no API key), `openai`, or `openai-compatible`. |
+| `CONFLUENCE2MD_EMBEDDING_MODEL` | optional | Model id, for example `text-embedding-3-small`. |
+| `CONFLUENCE2MD_EMBEDDING_DIM` | optional | Vector dimension such as `1024`. Part of the embedding identity. |
+| `CONFLUENCE2MD_EMBEDDING_BASE_URL` | optional | Endpoint for an `openai-compatible` provider. |
+| `CONFLUENCE2MD_EMBEDDING_API_KEY_ENV` | optional | Name of the variable that holds the API key (preferred over a literal key). |
+| `CONFLUENCE2MD_EMBEDDING_API_KEY` | optional | Literal API key. |
+| `CONFLUENCE2MD_EMBEDDING_SKIP` | optional | `true` disables the vector channel and leaves lexical search. |
 
-> The embedding provider used at query time must match the one used during indexing. If you indexed with OpenAI embeddings, query with OpenAI; if you indexed with hash fallback, query with hash fallback. Mismatched providers will not cause errors but will produce poor vector search results.
+The remaining `CONFLUENCE2MD_EMBEDDING_*` variables of the indexer are honoured too — `AUTH_HEADER`, `AUTH_SCHEME`, `HEADERS`, `QUERY_PARAMS`, `DOCUMENT_PREFIX`, `QUERY_PREFIX`, `BATCH_SIZE`, `TIMEOUT`, `MAX_RETRIES` — see the indexer's `docs/embedding-providers.md`.
+
+> **The index and the query must agree on the embedding configuration.** An index records the identity of the vectors it holds (`provider:variant@dimension`, for example `bow-local:fnv1a@256`), while a hybrid or vector query resolves its own identity from these variables. When the two differ, the query fails with `embedding mismatch: ...` instead of returning weak results; the tool error names both identities and how to fix it. Use `mode: "lexical"` to search without embeddings at all.
+
+> This server reads environment variables only. The indexer CLI additionally accepts a `config.yaml`; if you indexed through a configuration file, export the equivalent `CONFLUENCE2MD_EMBEDDING_*` variables here so that both sides resolve the same provider.
+
+## Upgrading an Index
+
+This server links `confluence2md-indexer` v0.5.0, which reads document metadata columns that indexes built by earlier indexer versions do not have. Such indexes are not migrated in place, so rebuild once after upgrading:
+
+```bash
+confluence2md-indexer index ./output --rebuild
+```
+
+Querying an index built by an older indexer fails with a database error; rebuilding is the supported fix.
 
 ## Installation
 
@@ -115,6 +134,8 @@ Response fields:
 | `total` | Total ranked results before pagination |
 | `results` | Array of result objects with chunk text and score breakdown |
 
+Failures are returned as tool errors that keep the indexer's message and add the fix when the cause is actionable: an embedding mismatch names both identities, a missing or vector-less index names the rebuild command, and a disabled vector channel points at `CONFLUENCE2MD_EMBEDDING_SKIP`. `mode: "lexical"` works without any embedding configuration.
+
 ## Development
 
 ### Build
@@ -137,6 +158,10 @@ GOOS=linux GOARCH=amd64 go build -o bin/confluence2md-mcp-linux-amd64 .
 ```bash
 go test ./... -run TestMCPStdioSmoke -v
 ```
+
+### Version
+
+Release builds stamp the binary through `ldflags`; the version is reported in the MCP `initialize` response and written to the startup log. An unstamped `go build` reports `dev`.
 
 ## Troubleshooting
 

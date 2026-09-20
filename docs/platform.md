@@ -26,7 +26,7 @@ Reads the Markdown output directory, chunks each page, computes vector embedding
 
 ### 3. Serve — `confluence2md-mcp`
 
-Wraps `confluence2md-indexer` as a stdio MCP server. Receives search queries from any MCP-compatible AI client (VS Code Copilot, Claude Code, OpenAI Codex, etc.), queries the SQLite index with hybrid retrieval, and returns ranked results with score metadata.
+Wraps `confluence2md-indexer` as a stdio MCP server. Receives search queries from any MCP-compatible AI client (VS Code Copilot, Claude Code, OpenAI Codex, etc.), queries the SQLite index with hybrid retrieval, and returns ranked results with score metadata. The server resolves its embedding provider from `CONFLUENCE2MD_EMBEDDING_*` variables, so it must resolve the same identity the index was built with; a mismatch is reported as an error instead of degrading silently to text-only scores.
 
 ## Quick Start
 
