@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/gkoos/confluence2md-mcp/compare/v0.2.1...v0.3.0) (2026-09-20)
+
+
+### Features
+
+* **query:** add metadata filters and embedding overrides to the search tool ([3f6c0f4](https://github.com/gkoos/confluence2md-mcp/commit/3f6c0f440a5a8d6f1a4de3a2e226a72e1a27c539))
+* use confluence2md-indexer v0.5.0 and surface embedding failures ([f8f1783](https://github.com/gkoos/confluence2md-mcp/commit/f8f1783875617f3ebb0cf2283baca9883a760566))
+
 ## [0.2.1](https://github.com/gkoos/confluence2md-mcp/compare/v0.2.0...v0.2.1) (2026-07-08)
 
 
