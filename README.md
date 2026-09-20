@@ -98,7 +98,7 @@ Add to `~/.codex/config.json`:
 }
 ```
 
-## Tool
+## Tools
 
 ### `confluence.search`
 
@@ -155,6 +155,16 @@ Response fields:
 
 Failures are returned as tool errors that keep the indexer's message and add the fix when the cause is actionable: an embedding mismatch names both identities, a missing or vector-less index names the rebuild command, and a disabled vector channel points at `CONFLUENCE2MD_EMBEDDING_SKIP`. `mode: "lexical"` works without any embedding configuration.
 
+### `confluence.list_spaces`
+
+List the Confluence space keys the index contains, so a client can scope a search without knowing the keys in advance.
+
+| Argument | Required | Description |
+|---|---|---|
+| `dbPath` | | Override DB path. Falls back to `CONFLUENCE_INDEX_DB`, then to `confluence2md-index.db` in the current working directory. |
+
+Response fields: `schemaVersion`, `tool`, `dbPath`, `count`, and `spaces` — a sorted array of space key strings, empty when the index holds no spaces.
+
 ## Development
 
 ### Build
@@ -177,6 +187,8 @@ GOOS=linux GOARCH=amd64 go build -o bin/confluence2md-mcp-linux-amd64 .
 ```bash
 go test ./... -run TestMCPStdioSmoke -v
 ```
+
+The suite also contains an offline end-to-end test: it installs the pinned indexer (`go install ...@v0.5.0`), builds an index from a temporary corpus with the default `bow-local` provider, and drives the server over stdio — checking the tool list, the space list, a search narrowed by space and the provider-mismatch error. It needs no API key or running service, and skips only when the indexer CLI cannot be installed.
 
 ### Version
 
