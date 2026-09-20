@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/gkoos/confluence2md-mcp/compare/v0.3.0...v0.4.0) (2026-09-20)
+
+
+### Features
+
+* add confluence.list_spaces and an offline end-to-end test ([#16](https://github.com/gkoos/confluence2md-mcp/issues/16)) ([94c002b](https://github.com/gkoos/confluence2md-mcp/commit/94c002b055e6c51a00cbe52c155608c34e782e66))
+
 ## [0.3.0](https://github.com/gkoos/confluence2md-mcp/compare/v0.2.1...v0.3.0) (2026-09-20)
 
 
