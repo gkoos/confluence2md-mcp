@@ -121,6 +121,25 @@ Search indexed Confluence content from a local SQLite DB.
 | `pageId` | | Filter by page ID |
 | `fromDate` | | Lower bound `YYYY-MM-DD` |
 | `toDate` | | Upper bound `YYYY-MM-DD` |
+| `spaces` | | Filter by any of several space keys; wins over `spaceKey` |
+| `host` | | Filter by crawled site host |
+| `author` | | Creator or last modifier name, case-insensitive |
+| `createdBy` | | Creator name only |
+| `modifiedBy` | | Last modifier name only |
+| `depthMin` / `depthMax` | | Crawl depth bounds; `depthMin: 1` excludes seed pages |
+| `seedOnly` | | Only the pages the crawl started from |
+| `hasAttachments` | | Only pages that carry at least one attachment |
+| `updatedSince` | | Modified within an age (`30d`, `2w`, `12h`) or after an absolute date (`2026-01-01`) |
+| `embeddingProvider` | | Override the provider for this call: `bow-local` \| `openai` \| `openai-compatible` |
+| `embeddingModel` | | Override the embedding model |
+| `embeddingDim` | | Override the embedding dimension |
+| `embeddingBaseURL` | | Override the embedding endpoint |
+| `embeddingApiKeyEnv` | | Name of the environment variable that holds the API key |
+| `embeddingAuthHeader` / `embeddingAuthScheme` | | Override the authentication header and scheme |
+| `embeddingSkip` | | Disable the vector channel for this call |
+| `embeddingDocumentPrefix` / `embeddingQueryPrefix` | | Text prefixes for asymmetric models |
+
+Metadata filters apply to lexical, vector and hybrid retrieval alike. Arguments win over environment variables: the indexer fills only the embedding fields that the arguments leave unset, so `embeddingModel` overrides `CONFLUENCE2MD_EMBEDDING_MODEL` for that call. A literal API key is deliberately **not** an argument — it would travel through the client conversation and the server log — so set `CONFLUENCE2MD_EMBEDDING_API_KEY` or name another variable with `embeddingApiKeyEnv`.
 
 Response fields:
 
