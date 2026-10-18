@@ -1,6 +1,6 @@
 module github.com/gkoos/confluence2md-mcp
 
-go 1.26.6
+go 1.26.9
 
 require (
 	github.com/gkoos/confluence2md-indexer v0.5.0
