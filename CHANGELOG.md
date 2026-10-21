@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/gkoos/confluence2md-mcp/compare/v0.4.0...v0.5.0) (2026-10-21)
+
+
+### Features
+
+* complete the agent-facing tool surface ([#23](https://github.com/gkoos/confluence2md-mcp/issues/23)) ([1298b68](https://github.com/gkoos/confluence2md-mcp/commit/1298b682627840c9b2b6258586883aa6c7d90358))
+
 ## [0.4.0](https://github.com/gkoos/confluence2md-mcp/compare/v0.3.0...v0.4.0) (2026-09-20)
 
 
