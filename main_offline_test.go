@@ -501,4 +501,19 @@ func TestOfflineIndexReportsStatsAndFacets(t *testing.T) {
 	if !ok || authors["Ada Lovelace"] != float64(2) || authors["Grace Hopper"] != float64(1) {
 		t.Fatalf("author facets = %v, want Ada 2 and Grace 1", buckets["author"])
 	}
+
+	// A page with two matching chunks must still count once: the tool groups by document,
+	// so the total agrees with the buckets instead of reporting chunks.
+	multi := toolPayload(t, session.call(4, "confluence.facets", map[string]any{"query": "deployment"}))
+	if multi["total"] != float64(1) {
+		t.Fatalf("multi-chunk total = %v, want 1 document", multi["total"])
+	}
+	multiBuckets, ok := multi["facets"].(map[string]any)
+	if !ok {
+		t.Fatalf("multi-chunk facets missing: %v", multi)
+	}
+	multiSpaces, ok := multiBuckets["space"].(map[string]any)
+	if !ok || multiSpaces["ENG"] != float64(1) {
+		t.Fatalf("multi-chunk space facets = %v, want one page", multiBuckets["space"])
+	}
 }

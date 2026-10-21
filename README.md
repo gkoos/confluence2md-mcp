@@ -190,7 +190,7 @@ Response fields: `schemaVersion`, `tool`, `dbPath`, and `stats`, which mirrors t
 
 Count the documents a query matches per space and author, without returning them. It takes the same arguments as `confluence.search` and defaults `facets` to `["space", "author"]`.
 
-Response fields: `schemaVersion`, `tool`, `dbPath`, `request`, `total` (matching documents), and `facets`; there are no result rows. Counts describe the whole matching set before `topK`, so a small `topK` does not change them.
+Response fields: `schemaVersion`, `tool`, `dbPath`, `request`, `total` (matching documents), and `facets`; there are no result rows. The tool groups by page internally, so `total` counts documents even when a page has several matching chunks, and counts describe the whole matching set before `topK`.
 
 ## Development
 

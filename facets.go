@@ -38,6 +38,10 @@ func facetsTool(s *server.MCPServer, defaultDBPath string) {
 		if len(req.Facets) == 0 {
 			req.Facets = append([]string(nil), defaultFacetDimensions...)
 		}
+		// The counts are per document, so the total has to be too: without grouping the
+		// indexer reports the number of matching chunks, which disagrees with every bucket
+		// as soon as one page has several chunks. The rows are discarded here anyway.
+		req.Group = "document"
 
 		resp, err := indexerapi.Query(ctx, effectiveDBPath, req)
 		if err != nil {
