@@ -98,8 +98,48 @@ func TestQueryRequestFromArgsDefaults(t *testing.T) {
 	if req.Filters.SeedOnly || req.Filters.HasAttachments || req.Filters.UpdatedSince != "" {
 		t.Fatalf("unexpected filter defaults: %+v", req.Filters)
 	}
+	if req.Group != "" || req.MaxPerPage != 0 || len(req.Facets) != 0 {
+		t.Fatalf("result shaping must stay off by default: group=%q maxPerPage=%d facets=%v", req.Group, req.MaxPerPage, req.Facets)
+	}
+	if len(req.Embedding.Context) != 0 {
+		t.Fatalf("no context header unless the caller names one: %v", req.Embedding.Context)
+	}
 	if req.Embedding.Provider != "" || req.Embedding.Model != "" || req.Embedding.Dimension != 0 || req.Embedding.Skip {
 		t.Fatalf("embedding overrides must stay empty so the environment applies: %+v", req.Embedding)
+	}
+}
+
+func TestQueryRequestFromArgsMapsResultShaping(t *testing.T) {
+	args := map[string]any{
+		"group":      "document",
+		"maxPerPage": float64(1),
+		"facets":     []any{"space", "author"},
+	}
+
+	req, err := queryRequestFromArgs("page", args, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if req.Group != "document" {
+		t.Fatalf("group = %q, want document", req.Group)
+	}
+	if req.MaxPerPage != 1 {
+		t.Fatalf("maxPerPage = %d, want 1", req.MaxPerPage)
+	}
+	if len(req.Facets) != 2 || req.Facets[0] != "space" || req.Facets[1] != "author" {
+		t.Fatalf("facets = %v, want [space author]", req.Facets)
+	}
+}
+
+func TestQueryRequestFromArgsAcceptsCommaSeparatedFacets(t *testing.T) {
+	req, err := queryRequestFromArgs("page", map[string]any{"facets": "space, author"}, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(req.Facets) != 2 || req.Facets[0] != "space" || req.Facets[1] != "author" {
+		t.Fatalf("facets = %v, want [space author]", req.Facets)
 	}
 }
 
@@ -194,6 +234,21 @@ func TestQueryRequestFromArgsMapsEmbeddingOverrides(t *testing.T) {
 	}
 }
 
+func TestQueryRequestFromArgsMapsEmbeddingContext(t *testing.T) {
+	// An index built with a document context header can only be queried when the same
+	// selection is named here, exactly like the prefixes.
+	req, err := queryRequestFromArgs("page", map[string]any{
+		"embeddingContext": []any{"title", "space"},
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(req.Embedding.Context) != 2 || req.Embedding.Context[0] != "title" || req.Embedding.Context[1] != "space" {
+		t.Fatalf("embedding context = %v, want [title space]", req.Embedding.Context)
+	}
+}
+
 func TestQueryRequestFromArgsRejectsInvalidArguments(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -204,6 +259,8 @@ func TestQueryRequestFromArgsRejectsInvalidArguments(t *testing.T) {
 		{name: "depth range inverted", args: map[string]any{"depthMin": float64(3), "depthMax": float64(1)}, contains: "depthMin"},
 		{name: "negative dimension", args: map[string]any{"embeddingDim": float64(-1)}, contains: "embeddingDim"},
 		{name: "unparsable age", args: map[string]any{"updatedSince": "yesterday"}, contains: "30d"},
+		{name: "negative page cap", args: map[string]any{"maxPerPage": float64(-1)}, contains: "maxPerPage"},
+		{name: "unknown group", args: map[string]any{"group": "chunk"}, contains: "document"},
 	}
 
 	for _, tc := range tests {

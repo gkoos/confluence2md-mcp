@@ -64,6 +64,11 @@ func main() {
 		mcp.WithNumber("limit", mcp.Description("Result limit")),
 		mcp.WithNumber("candidateK", mcp.Description("Candidates per retrieval channel")),
 		mcp.WithNumber("expand", mcp.Description("Context expansion chunk count")),
+		mcp.WithString("group",
+			mcp.Description("Result granularity: document returns one result per page, with a chunk count"),
+			mcp.Enum("document"),
+		),
+		mcp.WithNumber("maxPerPage", mcp.Description("Cap chunks per document in the results; 0 means unlimited")),
 		mcp.WithString("spaceKey", mcp.Description("Optional filter by space key")),
 		mcp.WithString("pageId", mcp.Description("Optional filter by page ID")),
 		mcp.WithString("fromDate", mcp.Description("Optional lower bound YYYY-MM-DD")),
@@ -78,6 +83,7 @@ func main() {
 		mcp.WithBoolean("seedOnly", mcp.Description("Keep only the pages the crawl started from")),
 		mcp.WithBoolean("hasAttachments", mcp.Description("Keep only pages that carry at least one attachment")),
 		mcp.WithString("updatedSince", mcp.Description("Keep pages modified within an age such as 30d, 2w or 12h, or after an absolute date such as 2026-01-01")),
+		mcp.WithArray("facets", mcp.Description("Count documents per bucket over the whole matching set, before topK: space, author"), mcp.WithStringItems()),
 		mcp.WithString("embeddingProvider", mcp.Description("Override the embedding provider for this call: bow-local, openai or openai-compatible")),
 		mcp.WithString("embeddingModel", mcp.Description("Override the embedding model for this call")),
 		mcp.WithNumber("embeddingDim", mcp.Description("Override the embedding dimension for this call")),
@@ -88,6 +94,7 @@ func main() {
 		mcp.WithBoolean("embeddingSkip", mcp.Description("Disable the vector channel for this call")),
 		mcp.WithString("embeddingDocumentPrefix", mcp.Description("Prefix added to document text before embedding")),
 		mcp.WithString("embeddingQueryPrefix", mcp.Description("Prefix added to the query before embedding")),
+		mcp.WithArray("embeddingContext", mcp.Description("Document context header the index was built with: title, space, section"), mcp.WithStringItems()),
 	)
 
 	s.AddTool(searchTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -124,6 +131,9 @@ func main() {
 			"count":         len(results),
 			"total":         resp.Total,
 			"results":       results,
+		}
+		if len(resp.Facets) > 0 {
+			payload["facets"] = resp.Facets
 		}
 		b, _ := json.MarshalIndent(payload, "", "  ")
 		return mcp.NewToolResultText(string(b)), nil
@@ -227,6 +237,16 @@ func queryRequestFromArgs(text string, args map[string]any, now time.Time) (inde
 		Limit:      getInt(args, "limit", 0),
 		CandidateK: getInt(args, "candidateK", 50),
 		Expand:     getInt(args, "expand", 0),
+		Group:      getString(args, "group", ""),
+		MaxPerPage: getInt(args, "maxPerPage", 0),
+		Facets:     getStrings(args, "facets"),
+	}
+
+	if req.Group != "" && req.Group != "document" {
+		return indexerapi.QueryRequest{}, fmt.Errorf("group must be \"document\" when it is set")
+	}
+	if req.MaxPerPage < 0 {
+		return indexerapi.QueryRequest{}, fmt.Errorf("maxPerPage must be >= 0")
 	}
 
 	req.Filters.SpaceKey = getString(args, "spaceKey", "")
@@ -273,6 +293,7 @@ func queryRequestFromArgs(text string, args map[string]any, now time.Time) (inde
 	req.Embedding.AuthScheme = getString(args, "embeddingAuthScheme", "")
 	req.Embedding.DocPrefix = getString(args, "embeddingDocumentPrefix", "")
 	req.Embedding.QueryPrefix = getString(args, "embeddingQueryPrefix", "")
+	req.Embedding.Context = getStrings(args, "embeddingContext")
 	req.Embedding.Skip = getBool(args, "embeddingSkip", false)
 
 	dimension, hasDimension := optionalInt(args, "embeddingDim")
