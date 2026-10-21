@@ -131,7 +131,7 @@ Search indexed Confluence content from a local SQLite DB.
 | `seedOnly` | | Only the pages the crawl started from |
 | `hasAttachments` | | Only pages that carry at least one attachment |
 | `updatedSince` | | Modified within an age (`30d`, `2w`, `12h`) or after an absolute date (`2026-01-01`) |
-| `facets` | | Count documents per bucket over the whole matching set, before `topK`: `space`, `author` |
+| `facets` | | Count documents per bucket over the ranked candidate set (bounded by `candidateK`), before `topK`: `space`, `author` |
 | `embeddingProvider` | | Override the provider for this call: `bow-local` \| `openai` \| `openai-compatible` |
 | `embeddingModel` | | Override the embedding model |
 | `embeddingDim` | | Override the embedding dimension |
@@ -193,7 +193,7 @@ Response fields: `schemaVersion`, `tool`, `dbPath`, and `stats`. The `stats` obj
 
 Count the documents a query matches per space and author, without returning them. It takes the same arguments as `confluence.search` and defaults `facets` to `["space", "author"]`.
 
-Response fields: `schemaVersion`, `tool`, `dbPath`, `request`, `total` (matching documents), and `facets`; there are no result rows. The tool groups by page internally, so `total` counts documents even when a page has several matching chunks, and counts describe the whole matching set before `topK`.
+Response fields: `schemaVersion`, `tool`, `dbPath`, `request`, `total` (matching documents), and `facets`; there are no result rows. The tool groups by page internally, so `total` counts documents even when a page has several matching chunks, and counts describe the ranked candidate set before `topK` — bounded by `candidateK`, not every document in the corpus.
 
 ## Query semantics
 
@@ -215,7 +215,9 @@ Three of them bound each other:
 
 Returned as a tool error: `group` set to anything but `document`; a negative `maxPerPage`, `depthMin`, `depthMax` or `embeddingDim`; `depthMin` greater than `depthMax`; an `updatedSince` that is neither an age (`30d`, `2w`, `12h`) nor a date; an unknown facet dimension (`unknown facet "x" (available: space, author)`).
 
-Not rejected: a value of the wrong JSON type falls back to the default. `limit: "ten"` behaves like `limit: 0` (ten results), `alpha: "high"` like `0.70`, and `seedOnly: "yes"` like `false`. Send numbers as numbers and booleans as booleans; the server cannot tell a typo from an intentional default.
+Not rejected: values are coerced where they can be. A number or boolean sent as a string is parsed when it parses — `limit: "5"` is 5, `alpha: "0.4"` is 0.4, `seedOnly: "true"` is true — and a list accepts a comma-separated string as well as an array (`spaces: "ENG,OPS"`). When a value cannot be parsed, the argument silently falls back to its default: `limit: "ten"` behaves like `limit: 0`, which inherits `topK`; `alpha: "high"` behaves like `0.70`; `seedOnly: "yes"` behaves like `false`.
+
+One sharp edge: `depthMin` and `depthMax` treat a supplied but unparseable value — including `null` — as an explicit `0`, not as absent. `depthMax: 0` keeps only seed pages, so a typo there silently narrows a search to the crawl seeds. Send those two as numbers, and omit them to leave the bound open.
 
 A query that is empty or only whitespace returns an empty result set, not an error; a missing `query` (or a non-string one) is rejected. Whitespace is trimmed before matching.
 
@@ -229,12 +231,13 @@ One result per page, carrying the page's best-scoring chunk: `fusedScore` is tha
 
 ### Facet counting
 
-Counts are document counts over the full matching set, taken before `topK`, so they describe the corpus rather than the page of results. Rules worth knowing:
+Counts are document counts over the ranked candidate set, taken before `topK` but after each retrieval channel has been capped by `candidateK`. They are wider than the results page and not necessarily exhaustive for the corpus: a query whose lexical channel returns only `candidateK` hits counts only the documents among those hits. Rules worth knowing:
 
 - A page counts once per dimension however many of its chunks matched.
 - `author` counts a page for its creator *and* for its last modifier, so the buckets can sum to more than `total`. That matches the `author` filter, which also matches either name.
 - A page whose metadata has no value for the dimension adds no bucket, so buckets can sum to less than `total`.
 - Only the dimensions asked for are counted; the `confluence.facets` tool defaults to `space` and `author`.
+- `topK` does not change the counts — it only changes how many rows come back. `candidateK` is what bounds them.
 
 ## Response reference
 
@@ -260,7 +263,7 @@ An empty result set is `[]`, never `null`, so a client can iterate it without a 
 
 - Keys are the indexer's Go field names — `Text`, `Mode`, `RRFK`, `TopK`, `Limit`, `Filters.SpaceKey` — not the MCP argument names.
 - Embedding overrides are never echoed; the indexer tags them out of its request contract. Priors are excluded the same way, so they will not appear once they are exposed.
-- `Filters` appears in full with every filter key, empty when unused, and includes `Candidate`, the internal candidate limit.
+- `Filters` always carries `SpaceKey`, `PageID`, `FromDate`, `ToDate` and the internal `Candidate` limit. The metadata filters (`Spaces`, `Host`, `Author`, `CreatedBy`, `ModifiedBy`, `DepthMin`, `DepthMax`, `SeedOnly`, `HasAttachments`, `UpdatedSince`) use `omitempty`, so an unused one is absent rather than empty.
 - Values are as sent: `Limit` reads `0` even though the effective page size is `topK`.
 - `Group`, `MaxPerPage` and `Facets` are omitted when unset, so a default call's echo has no trace of them.
 
@@ -457,7 +460,7 @@ With `expand: 2`, the matched chunk arrives inside its window — `chunkText` is
 - **Chunk-level text.** A result carries a chunk, or a window of chunks with `expand`; no tool returns a whole page. `group: "document"` plus `expand` is the closest equivalent.
 - **Attachments and comments are metadata only.** The index stores their counts, so a search can filter on them but not read them.
 - **No ranking priors yet.** Recency, authority, seed, depth and richness weighting exist in the indexer but are not exposed as arguments; see gkoos/confluence2md-indexer#59.
-- **No index build or refresh.** The server only reads. Building is `confluence2md-indexer index <folder>`, and `stats.corpus.crawlCompletedAt` is how you notice the index fell behind the crawl.
+- **No index build or refresh.** The server only reads. Building is `confluence2md-indexer index <folder>`, and `stats.corpus.crawlCompletedAt` is the crawl timestamp *stored at index time* — it cannot see a later crawl. To tell whether the index is behind, compare it with the crawler's current `metadata.json` (`last_completed_crawl_completed_at`).
 - **stdio only.** There is no HTTP or SSE transport.
 - **`confluence.list_spaces` is the one direct read.** It queries `documents.space_key` itself because `pkg/indexerapi` publishes no space list, and it returns keys only — no titles, counts or hierarchy.
 - **The caller owns the trust boundary.** `dbPath` opens any SQLite file the process can read, and `embeddingBaseURL` with `embeddingApiKeyEnv` can send a named environment variable's value to any host. Where the indexed content is untrusted, treat those two as privileged.
@@ -505,10 +508,10 @@ Release builds stamp the binary through `ldflags`; the version is reported in th
 ## Troubleshooting
 
 - **No results:** verify `CONFLUENCE_INDEX_DB` points to a built index containing the `chunks_fts` and `embeddings` tables.
-- **No results although `stats` counts documents:** a filter is excluding everything — `spaceKey` is an exact match (read the keys with `confluence.list_spaces`), `updatedSince` is relative to now, and `depthMin: 1` drops seed pages. Also compare `stats.corpus.crawlCompletedAt` with `stats.corpus.indexedAt`: a later timestamp means the indexing run read a moving corpus, so the page may have moved.
+- **No results although `stats` counts documents:** a filter is excluding everything — `spaceKey` is an exact match (read the keys with `confluence.list_spaces`), `updatedSince` is relative to now, and `depthMin: 1` drops seed pages. Also compare `stats.corpus.crawlCompletedAt` with `stats.corpus.indexedAt`: a later completion means the indexing run read a moving corpus. Neither timestamp can see a crawl that happened *after* indexing, so compare them with the crawler's current `metadata.json` to judge staleness.
 - **`facets` missing from a search payload:** only `confluence.facets` always returns the block. A search omits it unless the call passes `facets`.
-- **`total` smaller than the facet buckets:** `topK` truncated the ranked set. Raise `topK` for more rows, or read the buckets for the match counts.
-- **A filter or limit had no effect:** an argument sent with the wrong JSON type falls back to its default — see [Query semantics](#what-is-rejected-and-what-is-silently-defaulted).
+- **A facet bucket sum that disagrees with `total`:** both numbers can be right. Author buckets count a page once per writer — creator and last modifier — so they sum above `total`; and the counts come from at most `candidateK` hits per channel, so they can fall short of the real match count. Raise `candidateK` to widen the counts; `topK` only changes how many rows are returned.
+- **A filter or limit had no effect:** a value that cannot be parsed falls back to its default, and `depthMin`/`depthMax` turn an unparseable one into an explicit `0` — see [Query semantics](#what-is-rejected-and-what-is-silently-defaulted).
 - **WSL + Windows binary:** use the Linux binary with a native Linux DB path — see the WSL note above.
 - **Tools not appearing in chat:** restart your MCP client after registration.
 
