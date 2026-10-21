@@ -41,54 +41,9 @@ func main() {
 	)
 
 	searchTool := mcp.NewTool("confluence.search",
-		mcp.WithDescription("Search indexed Confluence content from a local SQLite DB"),
-		mcp.WithString("query",
-			mcp.Required(),
-			mcp.Description("Search query text"),
-		),
-		mcp.WithString("dbPath",
-			mcp.Description("Optional path to SQLite DB. Defaults to CONFLUENCE_INDEX_DB or confluence2md-index.db"),
-		),
-		mcp.WithString("mode",
-			mcp.Description("Retrieval mode: hybrid, lexical, or vector"),
-			mcp.Enum("hybrid", "lexical", "vector"),
-		),
-		mcp.WithString("fusion",
-			mcp.Description("Fusion mode: weighted or rrf"),
-			mcp.Enum("weighted", "rrf"),
-		),
-		mcp.WithNumber("alpha", mcp.Description("Weighted fusion alpha in [0..1]")),
-		mcp.WithNumber("rrfK", mcp.Description("RRF k constant (>0)")),
-		mcp.WithNumber("topK", mcp.Description("Top ranked results to consider")),
-		mcp.WithNumber("offset", mcp.Description("Result offset")),
-		mcp.WithNumber("limit", mcp.Description("Result limit")),
-		mcp.WithNumber("candidateK", mcp.Description("Candidates per retrieval channel")),
-		mcp.WithNumber("expand", mcp.Description("Context expansion chunk count")),
-		mcp.WithString("spaceKey", mcp.Description("Optional filter by space key")),
-		mcp.WithString("pageId", mcp.Description("Optional filter by page ID")),
-		mcp.WithString("fromDate", mcp.Description("Optional lower bound YYYY-MM-DD")),
-		mcp.WithString("toDate", mcp.Description("Optional upper bound YYYY-MM-DD")),
-		mcp.WithArray("spaces", mcp.Description("Filter by any of these space keys; wins over spaceKey"), mcp.WithStringItems()),
-		mcp.WithString("host", mcp.Description("Optional filter by crawled site host")),
-		mcp.WithString("author", mcp.Description("Filter by creator or last modifier name, case-insensitive")),
-		mcp.WithString("createdBy", mcp.Description("Filter by creator name only")),
-		mcp.WithString("modifiedBy", mcp.Description("Filter by last modifier name only")),
-		mcp.WithNumber("depthMin", mcp.Description("Minimum crawl depth; 1 excludes seed pages")),
-		mcp.WithNumber("depthMax", mcp.Description("Maximum crawl depth")),
-		mcp.WithBoolean("seedOnly", mcp.Description("Keep only the pages the crawl started from")),
-		mcp.WithBoolean("hasAttachments", mcp.Description("Keep only pages that carry at least one attachment")),
-		mcp.WithString("updatedSince", mcp.Description("Keep pages modified within an age such as 30d, 2w or 12h, or after an absolute date such as 2026-01-01")),
-		mcp.WithString("embeddingProvider", mcp.Description("Override the embedding provider for this call: bow-local, openai or openai-compatible")),
-		mcp.WithString("embeddingModel", mcp.Description("Override the embedding model for this call")),
-		mcp.WithNumber("embeddingDim", mcp.Description("Override the embedding dimension for this call")),
-		mcp.WithString("embeddingBaseURL", mcp.Description("Override the embedding endpoint for this call")),
-		mcp.WithString("embeddingApiKeyEnv", mcp.Description("Name of the environment variable that holds the API key")),
-		mcp.WithString("embeddingAuthHeader", mcp.Description("Override the authentication header name")),
-		mcp.WithString("embeddingAuthScheme", mcp.Description("Override the authentication scheme prefix")),
-		mcp.WithBoolean("embeddingSkip", mcp.Description("Disable the vector channel for this call")),
-		mcp.WithString("embeddingDocumentPrefix", mcp.Description("Prefix added to document text before embedding")),
-		mcp.WithString("embeddingQueryPrefix", mcp.Description("Prefix added to the query before embedding")),
-	)
+		append([]mcp.ToolOption{
+			mcp.WithDescription("Search indexed Confluence content from a local SQLite DB"),
+		}, searchArgumentOptions()...)...)
 
 	s.AddTool(searchTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := request.GetArguments()
@@ -125,11 +80,16 @@ func main() {
 			"total":         resp.Total,
 			"results":       results,
 		}
+		if len(resp.Facets) > 0 {
+			payload["facets"] = resp.Facets
+		}
 		b, _ := json.MarshalIndent(payload, "", "  ")
 		return mcp.NewToolResultText(string(b)), nil
 	})
 
 	listSpacesTool(s, dbPath)
+	statsTool(s, dbPath)
+	facetsTool(s, dbPath)
 
 	log.Printf("starting %s %s: dbPath=%s", serverName, version, dbPath)
 	if err := server.ServeStdio(s); err != nil {
@@ -227,6 +187,16 @@ func queryRequestFromArgs(text string, args map[string]any, now time.Time) (inde
 		Limit:      getInt(args, "limit", 0),
 		CandidateK: getInt(args, "candidateK", 50),
 		Expand:     getInt(args, "expand", 0),
+		Group:      getString(args, "group", ""),
+		MaxPerPage: getInt(args, "maxPerPage", 0),
+		Facets:     getStrings(args, "facets"),
+	}
+
+	if req.Group != "" && req.Group != "document" {
+		return indexerapi.QueryRequest{}, fmt.Errorf("group must be \"document\" when it is set")
+	}
+	if req.MaxPerPage < 0 {
+		return indexerapi.QueryRequest{}, fmt.Errorf("maxPerPage must be >= 0")
 	}
 
 	req.Filters.SpaceKey = getString(args, "spaceKey", "")
@@ -273,6 +243,7 @@ func queryRequestFromArgs(text string, args map[string]any, now time.Time) (inde
 	req.Embedding.AuthScheme = getString(args, "embeddingAuthScheme", "")
 	req.Embedding.DocPrefix = getString(args, "embeddingDocumentPrefix", "")
 	req.Embedding.QueryPrefix = getString(args, "embeddingQueryPrefix", "")
+	req.Embedding.Context = getStrings(args, "embeddingContext")
 	req.Embedding.Skip = getBool(args, "embeddingSkip", false)
 
 	dimension, hasDimension := optionalInt(args, "embeddingDim")

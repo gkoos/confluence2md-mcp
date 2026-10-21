@@ -19,7 +19,7 @@ import (
 // indexerModuleVersion pins the indexer release that builds the fixture index. It
 // matches the version this module requires, so the test follows the same paths a
 // release build takes.
-const indexerModuleVersion = "v0.5.0"
+const indexerModuleVersion = "v0.9.0"
 
 var (
 	installIndexerOnce sync.Once
@@ -73,22 +73,42 @@ func writeCorpus(t *testing.T) string {
 	dir := t.TempDir()
 	pages := map[string]map[string]string{
 		"2001": {
-			"local_path":       "apple.md",
-			"title":            "Apple Runbook",
-			"space_key":        "ENG",
-			"last_modified_at": "2026-02-10T10:00:00Z",
-			"source_url":       "https://example.test/pages/2001",
+			"local_path":            "apple.md",
+			"title":                 "Apple Runbook",
+			"space_key":             "ENG",
+			"last_modified_at":      "2026-02-10T10:00:00Z",
+			"source_url":            "https://example.test/pages/2001",
+			"canonical_url":         "https://example.test/pages/2001-canonical",
+			"created_by_name":       "Ada Lovelace",
+			"last_modified_by_name": "Ada Lovelace",
 		},
 		"2002": {
-			"local_path":       "oncall.md",
-			"title":            "On-call Handbook",
-			"space_key":        "OPS",
-			"last_modified_at": "2025-01-05T08:00:00Z",
-			"source_url":       "https://example.test/pages/2002",
+			"local_path":            "oncall.md",
+			"title":                 "On-call Handbook",
+			"space_key":             "OPS",
+			"last_modified_at":      "2025-01-05T08:00:00Z",
+			"source_url":            "https://example.test/pages/2002",
+			"created_by_name":       "Grace Hopper",
+			"last_modified_by_name": "Ada Lovelace",
+		},
+		// A page with two sections, so grouping and the per-page cap have chunks to
+		// collapse. It carries no "apple", which keeps the space-filter test above
+		// unaffected.
+		"2003": {
+			"local_path":            "deploy.md",
+			"title":                 "Deployment Runbook",
+			"space_key":             "ENG",
+			"last_modified_at":      "2026-03-01T09:00:00Z",
+			"source_url":            "https://example.test/pages/2003",
+			"created_by_name":       "Ada Lovelace",
+			"last_modified_by_name": "Grace Hopper",
 		},
 	}
 
-	metadata, err := json.MarshalIndent(map[string]any{"pages": pages}, "", "  ")
+	metadata, err := json.MarshalIndent(map[string]any{
+		"last_completed_crawl_completed_at": "2026-02-01T00:00:00Z",
+		"pages":                             pages,
+	}, "", "  ")
 	if err != nil {
 		t.Fatalf("marshal metadata: %v", err)
 	}
@@ -99,6 +119,7 @@ func writeCorpus(t *testing.T) string {
 	files := map[string]string{
 		"apple.md":  "# Apple Runbook\n\nThe apple rotation happens on Mondays.\n",
 		"oncall.md": "# On-call Handbook\n\nEscalate the apple incident to the ops channel.\n",
+		"deploy.md": "# Deployment\n\nIntro text.\n\n## Rollback\n\nSteps to undo the change.\n",
 	}
 	for name, content := range files {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
@@ -286,6 +307,8 @@ func TestOfflineIndexServesSearchAndSpaces(t *testing.T) {
 	assertResponseID(t, toolsMsg, 2)
 	assertHasTool(t, toolsMsg, "confluence.search")
 	assertHasTool(t, toolsMsg, "confluence.list_spaces")
+	assertHasTool(t, toolsMsg, "confluence.stats")
+	assertHasTool(t, toolsMsg, "confluence.facets")
 
 	spacesPayload := toolPayload(t, session.call(3, "confluence.list_spaces", map[string]any{}))
 	if got := spacesPayload["schemaVersion"]; got != schemaVersion {
@@ -353,5 +376,144 @@ func TestOfflineIndexSurfacesProviderMismatch(t *testing.T) {
 	}))
 	if lexicalError {
 		t.Fatalf("lexical search must not need matching embeddings: %s", lexical)
+	}
+}
+
+// TestOfflineIndexShapesResults covers the v0.9.0 result-shaping arguments: grouping a
+// page with its chunk count, the per-page cap, facets and canonical URLs.
+func TestOfflineIndexShapesResults(t *testing.T) {
+	dbPath := buildIndex(t, writeCorpus(t))
+	session := startSession(t, dbPath)
+
+	grouped := toolPayload(t, session.call(2, "confluence.search", map[string]any{
+		"query": "deployment", "mode": "hybrid", "group": "document",
+	}))
+	if got := grouped["total"]; got != float64(1) {
+		t.Fatalf("grouped total = %v, want 1 document", got)
+	}
+	results, ok := grouped["results"].([]any)
+	if !ok || len(results) != 1 {
+		t.Fatalf("grouped results = %v, want one page", grouped["results"])
+	}
+	page, ok := results[0].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected grouped result: %v", results[0])
+	}
+	if page["title"] != "Deployment Runbook" || page["chunkCount"] != float64(2) {
+		t.Fatalf("grouped result = %v, want the page with chunkCount 2", page)
+	}
+
+	chunked := toolPayload(t, session.call(3, "confluence.search", map[string]any{
+		"query": "deployment", "mode": "hybrid", "topK": 10,
+	}))
+	if got := chunked["count"]; got != float64(2) {
+		t.Fatalf("chunked count = %v, want 2 chunks", got)
+	}
+
+	capped := toolPayload(t, session.call(4, "confluence.search", map[string]any{
+		"query": "deployment", "mode": "hybrid", "maxPerPage": 1,
+	}))
+	if got := capped["count"]; got != float64(1) {
+		t.Fatalf("capped count = %v, want 1 chunk", got)
+	}
+
+	apple := toolPayload(t, session.call(5, "confluence.search", map[string]any{
+		"query": "apple", "mode": "hybrid", "topK": 5,
+	}))
+	appleResults, ok := apple["results"].([]any)
+	if !ok || len(appleResults) == 0 {
+		t.Fatalf("apple search returned no results: %v", apple)
+	}
+	first, ok := appleResults[0].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected apple result: %v", appleResults[0])
+	}
+	if first["canonicalUrl"] != "https://example.test/pages/2001-canonical" {
+		t.Fatalf("canonicalUrl = %v, want the link the crawler recorded", first["canonicalUrl"])
+	}
+
+	// Facets count the matching documents, not the returned rows: topK is 1 here.
+	faceted := toolPayload(t, session.call(6, "confluence.search", map[string]any{
+		"query": "apple", "mode": "hybrid", "facets": []string{"space", "author"}, "topK": 1,
+	}))
+	facets, ok := faceted["facets"].(map[string]any)
+	if !ok {
+		t.Fatalf("facets missing from the payload: %v", faceted)
+	}
+	spaces, ok := facets["space"].(map[string]any)
+	if !ok || spaces["ENG"] != float64(1) || spaces["OPS"] != float64(1) {
+		t.Fatalf("space facets = %v, want one page per space", facets["space"])
+	}
+	authors, ok := facets["author"].(map[string]any)
+	if !ok || authors["Ada Lovelace"] != float64(2) || authors["Grace Hopper"] != float64(1) {
+		t.Fatalf("author facets = %v, want Ada 2 and Grace 1", facets["author"])
+	}
+}
+
+// TestOfflineIndexReportsStatsAndFacets covers the two read-only tools: an index summary
+// that explains an empty result set, and facet counts without result rows.
+func TestOfflineIndexReportsStatsAndFacets(t *testing.T) {
+	dbPath := buildIndex(t, writeCorpus(t))
+	session := startSession(t, dbPath)
+
+	stats := toolPayload(t, session.call(2, "confluence.stats", map[string]any{}))
+	if stats["tool"] != "confluence.stats" {
+		t.Fatalf("tool = %v, want confluence.stats", stats["tool"])
+	}
+	inner, ok := stats["stats"].(map[string]any)
+	if !ok {
+		t.Fatalf("stats payload missing: %v", stats)
+	}
+	if inner["documents"] != float64(3) || inner["chunks"] != float64(4) {
+		t.Fatalf("documents/chunks = %v/%v, want 3/4", inner["documents"], inner["chunks"])
+	}
+	if name, _ := inner["vectorName"].(string); !strings.HasPrefix(name, "bow-local:") {
+		t.Fatalf("vectorName = %v, want the stored bow-local identity", inner["vectorName"])
+	}
+	coverage, ok := inner["metadata"].(map[string]any)
+	if !ok || coverage["documents"] != float64(3) || coverage["withAuthors"] != float64(3) {
+		t.Fatalf("metadata coverage = %v, want three pages with authors", inner["metadata"])
+	}
+	corpus, ok := inner["corpus"].(map[string]any)
+	if !ok || corpus["crawlCompletedAt"] != "2026-02-01T00:00:00Z" || corpus["indexedAt"] == "" {
+		t.Fatalf("corpus = %v, want the crawl and the index timestamp", inner["corpus"])
+	}
+
+	facets := toolPayload(t, session.call(3, "confluence.facets", map[string]any{"query": "apple"}))
+	if facets["tool"] != "confluence.facets" {
+		t.Fatalf("tool = %v, want confluence.facets", facets["tool"])
+	}
+	if facets["total"] != float64(2) {
+		t.Fatalf("total = %v, want 2 matching documents", facets["total"])
+	}
+	if _, hasResults := facets["results"]; hasResults {
+		t.Fatalf("facets must not return result rows: %v", facets)
+	}
+	buckets, ok := facets["facets"].(map[string]any)
+	if !ok {
+		t.Fatalf("facets missing: %v", facets)
+	}
+	spaces, ok := buckets["space"].(map[string]any)
+	if !ok || spaces["ENG"] != float64(1) || spaces["OPS"] != float64(1) {
+		t.Fatalf("space facets = %v, want one page per space", buckets["space"])
+	}
+	authors, ok := buckets["author"].(map[string]any)
+	if !ok || authors["Ada Lovelace"] != float64(2) || authors["Grace Hopper"] != float64(1) {
+		t.Fatalf("author facets = %v, want Ada 2 and Grace 1", buckets["author"])
+	}
+
+	// A page with two matching chunks must still count once: the tool groups by document,
+	// so the total agrees with the buckets instead of reporting chunks.
+	multi := toolPayload(t, session.call(4, "confluence.facets", map[string]any{"query": "deployment"}))
+	if multi["total"] != float64(1) {
+		t.Fatalf("multi-chunk total = %v, want 1 document", multi["total"])
+	}
+	multiBuckets, ok := multi["facets"].(map[string]any)
+	if !ok {
+		t.Fatalf("multi-chunk facets missing: %v", multi)
+	}
+	multiSpaces, ok := multiBuckets["space"].(map[string]any)
+	if !ok || multiSpaces["ENG"] != float64(1) {
+		t.Fatalf("multi-chunk space facets = %v, want one page", multiBuckets["space"])
 	}
 }

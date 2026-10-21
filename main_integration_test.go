@@ -89,6 +89,9 @@ func TestMCPStdioSmoke(t *testing.T) {
 	listMsg := readMCP(t, reader, 8*time.Second)
 	assertResponseID(t, listMsg, 2)
 	assertHasTool(t, listMsg, "confluence.search")
+	assertHasTool(t, listMsg, "confluence.list_spaces")
+	assertHasTool(t, listMsg, "confluence.stats")
+	assertHasTool(t, listMsg, "confluence.facets")
 
 	sendMCP(t, stdin, map[string]any{
 		"jsonrpc": "2.0",

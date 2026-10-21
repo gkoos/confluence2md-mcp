@@ -8,7 +8,7 @@ Three tools that together form a complete local Confluence knowledge pipeline �
 |------|------|
 | [`confluence2md`](https://github.com/gkoos/confluence2md) | Crawls Confluence and exports pages as local Markdown files |
 | [`confluence2md-indexer`](https://github.com/gkoos/confluence2md-indexer) | Indexes the Markdown export into a searchable SQLite database |
-| [`confluence2md-mcp`](https://github.com/gkoos/confluence2md-mcp) | Serves the index to AI clients through two MCP tools, `confluence.search` and `confluence.list_spaces` |
+| [`confluence2md-mcp`](https://github.com/gkoos/confluence2md-mcp) | Serves the index to AI clients through four MCP tools: `confluence.search`, `confluence.stats`, `confluence.facets` and `confluence.list_spaces` |
 
 ## Architecture
 
@@ -26,14 +26,16 @@ Reads the Markdown output directory, chunks each page, computes vector embedding
 
 ### 3. Serve — `confluence2md-mcp`
 
-Wraps `confluence2md-indexer` as a stdio MCP server and exposes two tools to any MCP-compatible AI client (VS Code Copilot, Claude Code, OpenAI Codex, etc.):
+Wraps `confluence2md-indexer` as a stdio MCP server and exposes four tools to any MCP-compatible AI client (VS Code Copilot, Claude Code, OpenAI Codex, etc.):
 
 | Tool | Returns |
 |------|---------|
-| `confluence.search` | Ranked chunks with score metadata, narrowed by the metadata filters (`spaceKey`, `spaces`, `host`, `author`, `createdBy`, `modifiedBy`, `pageId`, `fromDate`/`toDate`, `depthMin`/`depthMax`, `seedOnly`, `hasAttachments`, `updatedSince`) and by per-call embedding overrides. |
+| `confluence.search` | Ranked chunks or one result per page, with score metadata, `canonicalUrl` and optional facet counts, narrowed by the metadata filters (`spaceKey`, `spaces`, `host`, `author`, `createdBy`, `modifiedBy`, `pageId`, `fromDate`/`toDate`, `depthMin`/`depthMax`, `seedOnly`, `hasAttachments`, `updatedSince`) and by per-call embedding overrides. |
+| `confluence.stats` | The index summary: size, crawl freshness, metadata coverage and the stored embedding identity. |
+| `confluence.facets` | Document counts per space and author for a query, without result rows. |
 | `confluence.list_spaces` | The space keys the index holds, so a client can scope a search without knowing them in advance. |
 
-The server reads the index built by the same indexer release; an index from an older release is not migrated, so rebuild it once (`confluence2md-indexer index <folder> --rebuild`). It resolves its embedding provider from `CONFLUENCE2MD_EMBEDDING_*` variables, so it must resolve the same identity the index was built with — a mismatch is reported as an actionable error instead of degrading silently to text-only scores, and `mode: "lexical"` works without any embedding configuration.
+The server reads the index built by the same indexer release; the schema is still version 1, so an index built by v0.5.0 or newer keeps working without a rebuild. It resolves its embedding provider from `CONFLUENCE2MD_EMBEDDING_*` variables, so it must resolve the same identity the index was built with — a mismatch is reported as an actionable error instead of degrading silently to text-only scores, and `mode: "lexical"` works without any embedding configuration.
 
 ## Quick Start
 

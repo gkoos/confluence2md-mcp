@@ -6,8 +6,8 @@ github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkp
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHkI4W8=
 github.com/frankban/quicktest v1.14.6/go.mod h1:4ptaffx2x8+WTWXmUCuVU6aPUX1/Mz7zb5vbUoiM6w0=
-github.com/gkoos/confluence2md-indexer v0.5.0 h1:aWtz0Q4q+B2/mPquvfYEzGh5DEcuSFMXq96yO2TGexA=
-github.com/gkoos/confluence2md-indexer v0.5.0/go.mod h1:iOnfak0sJaSjQ2Pm2l2HY5Q9yrlKWSt5jZ1ZmT/1us0=
+github.com/gkoos/confluence2md-indexer v0.9.0 h1:rKk/XVLc6/wrmYlF5QsQeU8Ghns0Qyu1YTAxA0GVAAQ=
+github.com/gkoos/confluence2md-indexer v0.9.0/go.mod h1:ehAkfPkl6mZwltzd3Mx1VBVGMUf1xsRT5rYTV7JGO50=
 github.com/glebarez/go-sqlite v1.23.0 h1:FyhIq4jqmgphQAUlY79zPldYGwISEZikaDfhiGWkkaI=
 github.com/glebarez/go-sqlite v1.23.0/go.mod h1:IIYrOH3L0rHY3jb4IXOHoWdklNajSGUN2eJcvK8WrnI=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=

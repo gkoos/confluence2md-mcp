@@ -13,7 +13,7 @@ MCP server that exposes [confluence2md-indexer](https://github.com/gkoos/conflue
 
 ## Requirements
 
-- A SQLite index built by [confluence2md-indexer](https://github.com/gkoos/confluence2md-indexer) **v0.5.0 or newer**
+- A SQLite index built by [confluence2md-indexer](https://github.com/gkoos/confluence2md-indexer) **v0.9.0 or newer**
 - Source content must use [`confluence2md`](https://github.com/gkoos/confluence2md) metadata format — other formats are not supported
 
 ## Environment Variables
@@ -28,8 +28,9 @@ MCP server that exposes [confluence2md-indexer](https://github.com/gkoos/conflue
 | `CONFLUENCE2MD_EMBEDDING_API_KEY_ENV` | optional | Name of the variable that holds the API key (preferred over a literal key). |
 | `CONFLUENCE2MD_EMBEDDING_API_KEY` | optional | Literal API key. |
 | `CONFLUENCE2MD_EMBEDDING_SKIP` | optional | `true` disables the vector channel and leaves lexical search. |
+| `CONFLUENCE2MD_EMBEDDING_CONTEXT` | optional | Document context header the index was built with, for example `title,space`; it must match the index or the query fails with an identity mismatch. |
 
-The remaining `CONFLUENCE2MD_EMBEDDING_*` variables of the indexer are honoured too — `AUTH_HEADER`, `AUTH_SCHEME`, `HEADERS`, `QUERY_PARAMS`, `DOCUMENT_PREFIX`, `QUERY_PREFIX`, `BATCH_SIZE`, `TIMEOUT`, `MAX_RETRIES` — see the indexer's `docs/embedding-providers.md`.
+The remaining `CONFLUENCE2MD_EMBEDDING_*` variables of the indexer are honoured too — `AUTH_HEADER`, `AUTH_SCHEME`, `HEADERS`, `QUERY_PARAMS`, `DOCUMENT_PREFIX`, `QUERY_PREFIX`, `CONTEXT`, `BATCH_SIZE`, `TIMEOUT`, `MAX_RETRIES` — see the indexer's `docs/embedding-providers.md`.
 
 > **The index and the query must agree on the embedding configuration.** An index records the identity of the vectors it holds (`provider:variant@dimension`, for example `bow-local:fnv1a@256`), while a hybrid or vector query resolves its own identity from these variables. When the two differ, the query fails with `embedding mismatch: ...` instead of returning weak results; the tool error names both identities and how to fix it. Use `mode: "lexical"` to search without embeddings at all.
 
@@ -37,13 +38,11 @@ The remaining `CONFLUENCE2MD_EMBEDDING_*` variables of the indexer are honoured 
 
 ## Upgrading an Index
 
-This server links `confluence2md-indexer` v0.5.0, which reads document metadata columns that indexes built by earlier indexer versions do not have. Such indexes are not migrated in place, so rebuild once after upgrading:
+This server links `confluence2md-indexer` v0.9.0. That release still writes schema version 1, the schema introduced with the document metadata columns, so an index built by any v0.5.0-or-newer indexer keeps working without a rebuild. A database written by an older build is refused with a message naming the rebuild command:
 
 ```bash
 confluence2md-indexer index ./output --rebuild
 ```
-
-Querying an index built by an older indexer fails with a database error; rebuilding is the supported fix.
 
 ## Installation
 
@@ -117,6 +116,8 @@ Search indexed Confluence content from a local SQLite DB.
 | `offset` | | Result offset |
 | `candidateK` | | Candidates per retrieval channel, default `50` |
 | `expand` | | Context expansion chunk count |
+| `group` | | `document` returns one result per page (page score, `chunkCount`); default chunk-level |
+| `maxPerPage` | | Cap chunks per document in the results; `0` (default) means unlimited |
 | `spaceKey` | | Filter by space key |
 | `pageId` | | Filter by page ID |
 | `fromDate` | | Lower bound `YYYY-MM-DD` |
@@ -130,6 +131,7 @@ Search indexed Confluence content from a local SQLite DB.
 | `seedOnly` | | Only the pages the crawl started from |
 | `hasAttachments` | | Only pages that carry at least one attachment |
 | `updatedSince` | | Modified within an age (`30d`, `2w`, `12h`) or after an absolute date (`2026-01-01`) |
+| `facets` | | Count documents per bucket over the whole matching set, before `topK`: `space`, `author` |
 | `embeddingProvider` | | Override the provider for this call: `bow-local` \| `openai` \| `openai-compatible` |
 | `embeddingModel` | | Override the embedding model |
 | `embeddingDim` | | Override the embedding dimension |
@@ -138,6 +140,7 @@ Search indexed Confluence content from a local SQLite DB.
 | `embeddingAuthHeader` / `embeddingAuthScheme` | | Override the authentication header and scheme |
 | `embeddingSkip` | | Disable the vector channel for this call |
 | `embeddingDocumentPrefix` / `embeddingQueryPrefix` | | Text prefixes for asymmetric models |
+| `embeddingContext` | | Document context header the index was built with: `title`, `space`, `section`. An index built with one only matches when the query names the same selection |
 
 Metadata filters apply to lexical, vector and hybrid retrieval alike. Arguments win over environment variables: the indexer fills only the embedding fields that the arguments leave unset, so `embeddingModel` overrides `CONFLUENCE2MD_EMBEDDING_MODEL` for that call. A literal API key is deliberately **not** an argument — it would travel through the client conversation and the server log — so set `CONFLUENCE2MD_EMBEDDING_API_KEY` or name another variable with `embeddingApiKeyEnv`.
 
@@ -150,8 +153,11 @@ Response fields:
 | `dbPath` | Resolved DB path used for the query |
 | `request` | Echoed request parameters |
 | `count` | Number of results returned in this response |
-| `total` | Total ranked results before pagination |
+| `total` | Total ranked results before pagination; in `group: "document"` mode it counts documents |
 | `results` | Array of result objects with chunk text and score breakdown |
+| `facets` | Present only when `facets` was requested: `{ "space": {...}, "author": {...} }` with document counts |
+
+Result objects carry `canonicalUrl` when the crawler recorded one, and `chunkCount` in `group: "document"` mode.
 
 Failures are returned as tool errors that keep the indexer's message and add the fix when the cause is actionable: an embedding mismatch names both identities, a missing or vector-less index names the rebuild command, and a disabled vector channel points at `CONFLUENCE2MD_EMBEDDING_SKIP`. `mode: "lexical"` works without any embedding configuration.
 
@@ -164,6 +170,27 @@ List the Confluence space keys the index contains, so a client can scope a searc
 | `dbPath` | | Override DB path. Falls back to `CONFLUENCE_INDEX_DB`, then to `confluence2md-index.db` in the current working directory. |
 
 Response fields: `schemaVersion`, `tool`, `dbPath`, `count`, and `spaces` — a sorted array of space key strings, empty when the index holds no spaces.
+
+### `confluence.stats`
+
+Report what an index holds, the crawl it was built from and the embedding identity behind its vectors. This is the tool that turns a failed or empty search into an answer: the index is empty, it is older than the crawl, or it was built with another provider.
+
+| Argument | Required | Description |
+|---|---|---|
+| `dbPath` | | Override DB path. Falls back to `CONFLUENCE_INDEX_DB`, then to `confluence2md-index.db` in the current working directory. |
+
+Response fields: `schemaVersion`, `tool`, `dbPath`, and `stats`, which mirrors the indexer's `stats --json` payload:
+
+- `stats.documents`, `stats.chunks`, `stats.embeddings`, `stats.runs`
+- `stats.vectorReady`, `stats.vectorName` (the stored embedding identity), `stats.vectorCapability`
+- `stats.metadata` — coverage: `documents`, `withAuthors`, `withLinks`, `withAttachments`, `withComments`, `seeds`, `nested`, `hosts`
+- `stats.corpus` — the crawl the index was built from: `crawlCompletedAt`, `indexedAt`, `crawlMode`, `pageCount`, `seedCount`. A `crawlCompletedAt` later than `indexedAt` means the indexing run read a moving corpus; the indexer's `--fail-if-stale` is the CLI equivalent.
+
+### `confluence.facets`
+
+Count the documents a query matches per space and author, without returning them. It takes the same arguments as `confluence.search` and defaults `facets` to `["space", "author"]`.
+
+Response fields: `schemaVersion`, `tool`, `dbPath`, `request`, `total` (matching documents), and `facets`; there are no result rows. The tool groups by page internally, so `total` counts documents even when a page has several matching chunks, and counts describe the whole matching set before `topK`.
 
 ## Development
 
@@ -188,7 +215,7 @@ GOOS=linux GOARCH=amd64 go build -o bin/confluence2md-mcp-linux-amd64 .
 go test ./... -run TestMCPStdioSmoke -v
 ```
 
-The suite also contains an offline end-to-end test: it installs the pinned indexer (`go install ...@v0.5.0`), builds an index from a temporary corpus with the default `bow-local` provider, and drives the server over stdio — checking the tool list, the space list, a search narrowed by space and the provider-mismatch error. It needs no API key or running service, and skips only when the indexer CLI cannot be installed.
+The suite also contains an offline end-to-end test: it installs the pinned indexer (`go install ...@v0.9.0`), builds an index from a temporary corpus with the default `bow-local` provider, and drives the server over stdio — checking the tool list, the space list, a search narrowed by space and the provider-mismatch error. It needs no API key or running service, and skips only when the indexer CLI cannot be installed.
 
 ### Version
 
