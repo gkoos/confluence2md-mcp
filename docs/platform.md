@@ -35,7 +35,7 @@ Wraps `confluence2md-indexer` as a stdio MCP server and exposes four tools to an
 | `confluence.facets` | Document counts per space and author for a query, without result rows. |
 | `confluence.list_spaces` | The space keys the index holds, so a client can scope a search without knowing them in advance. |
 
-The server reads the index built by the same indexer release; the schema is still version 1, so an index built by v0.5.0 or newer keeps working without a rebuild. It resolves its embedding provider from `CONFLUENCE2MD_EMBEDDING_*` variables, so it must resolve the same identity the index was built with — a mismatch is reported as an actionable error instead of degrading silently to text-only scores, and `mode: "lexical"` works without any embedding configuration.
+The server accepts any index that writes schema version 1 — every `confluence2md-indexer` release since v0.5.0 — so a server or indexer upgrade does not force a rebuild; an older database is refused with a message naming the rebuild command. It resolves its embedding provider from `CONFLUENCE2MD_EMBEDDING_*` variables unless a call overrides them, so it must resolve the same identity the index was built with — a mismatch is reported as an actionable error instead of degrading silently to text-only scores, and `mode: "lexical"` works without any embedding configuration.
 
 ## Quick Start
 
