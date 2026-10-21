@@ -13,7 +13,7 @@ MCP server that exposes [confluence2md-indexer](https://github.com/gkoos/conflue
 
 ## Requirements
 
-- A SQLite index built by [confluence2md-indexer](https://github.com/gkoos/confluence2md-indexer) **v0.9.0 or newer**
+- A SQLite index at schema version 1, written by [confluence2md-indexer](https://github.com/gkoos/confluence2md-indexer) **v0.5.0 or newer**. This server links v0.9.0; an index from an older release is refused with a message naming the rebuild command.
 - Source content must use [`confluence2md`](https://github.com/gkoos/confluence2md) metadata format — other formats are not supported
 
 ## Environment Variables
@@ -30,7 +30,7 @@ MCP server that exposes [confluence2md-indexer](https://github.com/gkoos/conflue
 | `CONFLUENCE2MD_EMBEDDING_SKIP` | optional | `true` disables the vector channel and leaves lexical search. |
 | `CONFLUENCE2MD_EMBEDDING_CONTEXT` | optional | Document context header the index was built with, for example `title,space`; it must match the index or the query fails with an identity mismatch. |
 
-The remaining `CONFLUENCE2MD_EMBEDDING_*` variables of the indexer are honoured too — `AUTH_HEADER`, `AUTH_SCHEME`, `HEADERS`, `QUERY_PARAMS`, `DOCUMENT_PREFIX`, `QUERY_PREFIX`, `CONTEXT`, `BATCH_SIZE`, `TIMEOUT`, `MAX_RETRIES` — see the indexer's `docs/embedding-providers.md`.
+The remaining `CONFLUENCE2MD_EMBEDDING_*` variables of the indexer are honoured too — `AUTH_HEADER`, `AUTH_SCHEME`, `HEADERS`, `QUERY_PARAMS`, `DOCUMENT_PREFIX`, `QUERY_PREFIX`, `BATCH_SIZE`, `TIMEOUT`, `MAX_RETRIES` — see the indexer's `docs/embedding-providers.md`.
 
 > **The index and the query must agree on the embedding configuration.** An index records the identity of the vectors it holds (`provider:variant@dimension`, for example `bow-local:fnv1a@256`), while a hybrid or vector query resolves its own identity from these variables. When the two differ, the query fails with `embedding mismatch: ...` instead of returning weak results; the tool error names both identities and how to fix it. Use `mode: "lexical"` to search without embeddings at all.
 
@@ -38,7 +38,7 @@ The remaining `CONFLUENCE2MD_EMBEDDING_*` variables of the indexer are honoured 
 
 ## Upgrading an Index
 
-This server links `confluence2md-indexer` v0.9.0. That release still writes schema version 1, the schema introduced with the document metadata columns, so an index built by any v0.5.0-or-newer indexer keeps working without a rebuild. A database written by an older build is refused with a message naming the rebuild command:
+This server links `confluence2md-indexer` v0.9.0, and every indexer release since v0.5.0 writes the same schema version 1 — the one that introduced the document metadata columns. An index built by any of those releases keeps working without a rebuild. A database written by an older indexer is refused with a message naming the rebuild command:
 
 ```bash
 confluence2md-indexer index ./output --rebuild
@@ -111,8 +111,8 @@ Search indexed Confluence content from a local SQLite DB.
 | `fusion` | | `weighted` (default) \| `rrf` |
 | `alpha` | | Weighted fusion alpha `[0..1]`, default `0.70` |
 | `rrfK` | | RRF k constant, default `60` |
-| `topK` | | Candidates to rank, default `10` |
-| `limit` | | Max results to return |
+| `topK` | | How many ranked results to consider; also the default for `limit`. Default `10` |
+| `limit` | | Max results to return. Defaults to `topK` (`10`); `0` inherits `topK` — it does not mean unlimited (that is `maxPerPage`) |
 | `offset` | | Result offset |
 | `candidateK` | | Candidates per retrieval channel, default `50` |
 | `expand` | | Context expansion chunk count |
@@ -153,7 +153,7 @@ Response fields:
 | `dbPath` | Resolved DB path used for the query |
 | `request` | Echoed request parameters |
 | `count` | Number of results returned in this response |
-| `total` | Total ranked results before pagination; in `group: "document"` mode it counts documents |
+| `total` | Results available after ranking — `topK` caps it — and before `offset`/`limit`; in `group: "document"` mode it counts documents. It is not the number of matching documents when `topK` truncates: read `facets` for that |
 | `results` | Array of result objects with chunk text and score breakdown |
 | `facets` | Present only when `facets` was requested: `{ "space": {...}, "author": {...} }` with document counts |
 
@@ -179,12 +179,15 @@ Report what an index holds, the crawl it was built from and the embedding identi
 |---|---|---|
 | `dbPath` | | Override DB path. Falls back to `CONFLUENCE_INDEX_DB`, then to `confluence2md-index.db` in the current working directory. |
 
-Response fields: `schemaVersion`, `tool`, `dbPath`, and `stats`, which mirrors the indexer's `stats --json` payload:
+Response fields: `schemaVersion`, `tool`, `dbPath`, and `stats`. The `stats` object is the indexer's `stats --json` object unchanged — only the envelope is this server's (`tool` here, `command` there) — and it carries:
 
 - `stats.documents`, `stats.chunks`, `stats.embeddings`, `stats.runs`
 - `stats.vectorReady`, `stats.vectorName` (the stored embedding identity), `stats.vectorCapability`
+- `stats.embeddingModels` — one entry per identity present: `name`, `dimension`, `chunks`
 - `stats.metadata` — coverage: `documents`, `withAuthors`, `withLinks`, `withAttachments`, `withComments`, `seeds`, `nested`, `hosts`
-- `stats.corpus` — the crawl the index was built from: `crawlCompletedAt`, `indexedAt`, `crawlMode`, `pageCount`, `seedCount`. A `crawlCompletedAt` later than `indexedAt` means the indexing run read a moving corpus; the indexer's `--fail-if-stale` is the CLI equivalent.
+- `stats.corpus` — the crawl the index was built from: `runId`, `crawlStartedAt`, `crawlCompletedAt`, `crawlSucceededAt`, `crawlMode`, `seedCount`, `pageCount`, `indexedAt`. A `crawlCompletedAt` later than `indexedAt` means the indexing run read a moving corpus; the indexer's `--fail-if-stale` is the CLI equivalent.
+
+`stats.corpus` is omitted when the index holds no crawl snapshot, which is what a content folder indexed without a `metadata.json` produces; `stats.metadata` is always present. `crawlStartedAt`, `crawlSucceededAt`, `crawlMode` and `seedCount` stay empty when the corpus only carried a completion timestamp.
 
 ### `confluence.facets`
 
@@ -203,7 +206,11 @@ go build -o bin/confluence2md-mcp .
 # Windows
 go build -o bin/confluence2md-mcp.exe .
 
-# Cross-compile Linux binary from Windows
+# Cross-compile a Linux binary (PowerShell)
+$env:GOOS = "linux"; $env:GOARCH = "amd64"
+go build -o bin/confluence2md-mcp-linux-amd64 .
+
+# The same in bash, WSL or macOS
 GOOS=linux GOARCH=amd64 go build -o bin/confluence2md-mcp-linux-amd64 .
 ```
 
@@ -212,10 +219,17 @@ GOOS=linux GOARCH=amd64 go build -o bin/confluence2md-mcp-linux-amd64 .
 ### Test
 
 ```bash
-go test ./... -run TestMCPStdioSmoke -v
+go test ./... -v
 ```
 
-The suite also contains an offline end-to-end test: it installs the pinned indexer (`go install ...@v0.9.0`), builds an index from a temporary corpus with the default `bow-local` provider, and drives the server over stdio — checking the tool list, the space list, a search narrowed by space and the provider-mismatch error. It needs no API key or running service, and skips only when the indexer CLI cannot be installed.
+The suite builds the server and drives it over stdio. Four offline end-to-end tests install the pinned indexer (`go install ...@v0.9.0`), build an index from a temporary corpus with the default `bow-local` provider, and check:
+
+- the tool list, `confluence.list_spaces`, and a search narrowed by space;
+- result shaping: `group: "document"` with `chunkCount`, `maxPerPage`, and `canonicalUrl`;
+- facet counts attached to a search payload;
+- `confluence.stats`: size, stored embedding identity, metadata coverage and the crawl timestamp; then `confluence.facets`, including the document total for a page with several matching chunks.
+
+One of the four covers the actionable failure — an index built with a different embedding identity — and a separate smoke test starts the server with no index at all to check the tool list and the missing-database error. Nothing needs an API key or a running service, and the offline tests skip only when the indexer CLI cannot be installed.
 
 ### Version
 
