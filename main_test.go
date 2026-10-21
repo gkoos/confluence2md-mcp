@@ -80,6 +80,15 @@ func TestSchemaVersionMatchesIndexerContract(t *testing.T) {
 	}
 }
 
+func TestStatsErrorKeepsTheIndexerMessage(t *testing.T) {
+	got := statsError("/tmp/index.db", errors.New("this file holds no index yet"))
+	want := "stats failed for /tmp/index.db: this file holds no index yet"
+
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
 func TestQueryRequestFromArgsDefaults(t *testing.T) {
 	req, err := queryRequestFromArgs("page", map[string]any{}, time.Now().UTC())
 	if err != nil {

@@ -105,7 +105,10 @@ func writeCorpus(t *testing.T) string {
 		},
 	}
 
-	metadata, err := json.MarshalIndent(map[string]any{"pages": pages}, "", "  ")
+	metadata, err := json.MarshalIndent(map[string]any{
+		"last_completed_crawl_completed_at": "2026-02-01T00:00:00Z",
+		"pages":                             pages,
+	}, "", "  ")
 	if err != nil {
 		t.Fatalf("marshal metadata: %v", err)
 	}
@@ -304,6 +307,8 @@ func TestOfflineIndexServesSearchAndSpaces(t *testing.T) {
 	assertResponseID(t, toolsMsg, 2)
 	assertHasTool(t, toolsMsg, "confluence.search")
 	assertHasTool(t, toolsMsg, "confluence.list_spaces")
+	assertHasTool(t, toolsMsg, "confluence.stats")
+	assertHasTool(t, toolsMsg, "confluence.facets")
 
 	spacesPayload := toolPayload(t, session.call(3, "confluence.list_spaces", map[string]any{}))
 	if got := spacesPayload["schemaVersion"]; got != schemaVersion {
@@ -442,5 +447,58 @@ func TestOfflineIndexShapesResults(t *testing.T) {
 	authors, ok := facets["author"].(map[string]any)
 	if !ok || authors["Ada Lovelace"] != float64(2) || authors["Grace Hopper"] != float64(1) {
 		t.Fatalf("author facets = %v, want Ada 2 and Grace 1", facets["author"])
+	}
+}
+
+// TestOfflineIndexReportsStatsAndFacets covers the two read-only tools: an index summary
+// that explains an empty result set, and facet counts without result rows.
+func TestOfflineIndexReportsStatsAndFacets(t *testing.T) {
+	dbPath := buildIndex(t, writeCorpus(t))
+	session := startSession(t, dbPath)
+
+	stats := toolPayload(t, session.call(2, "confluence.stats", map[string]any{}))
+	if stats["tool"] != "confluence.stats" {
+		t.Fatalf("tool = %v, want confluence.stats", stats["tool"])
+	}
+	inner, ok := stats["stats"].(map[string]any)
+	if !ok {
+		t.Fatalf("stats payload missing: %v", stats)
+	}
+	if inner["documents"] != float64(3) || inner["chunks"] != float64(4) {
+		t.Fatalf("documents/chunks = %v/%v, want 3/4", inner["documents"], inner["chunks"])
+	}
+	if name, _ := inner["vectorName"].(string); !strings.HasPrefix(name, "bow-local:") {
+		t.Fatalf("vectorName = %v, want the stored bow-local identity", inner["vectorName"])
+	}
+	coverage, ok := inner["metadata"].(map[string]any)
+	if !ok || coverage["documents"] != float64(3) || coverage["withAuthors"] != float64(3) {
+		t.Fatalf("metadata coverage = %v, want three pages with authors", inner["metadata"])
+	}
+	corpus, ok := inner["corpus"].(map[string]any)
+	if !ok || corpus["crawlCompletedAt"] != "2026-02-01T00:00:00Z" || corpus["indexedAt"] == "" {
+		t.Fatalf("corpus = %v, want the crawl and the index timestamp", inner["corpus"])
+	}
+
+	facets := toolPayload(t, session.call(3, "confluence.facets", map[string]any{"query": "apple"}))
+	if facets["tool"] != "confluence.facets" {
+		t.Fatalf("tool = %v, want confluence.facets", facets["tool"])
+	}
+	if facets["total"] != float64(2) {
+		t.Fatalf("total = %v, want 2 matching documents", facets["total"])
+	}
+	if _, hasResults := facets["results"]; hasResults {
+		t.Fatalf("facets must not return result rows: %v", facets)
+	}
+	buckets, ok := facets["facets"].(map[string]any)
+	if !ok {
+		t.Fatalf("facets missing: %v", facets)
+	}
+	spaces, ok := buckets["space"].(map[string]any)
+	if !ok || spaces["ENG"] != float64(1) || spaces["OPS"] != float64(1) {
+		t.Fatalf("space facets = %v, want one page per space", buckets["space"])
+	}
+	authors, ok := buckets["author"].(map[string]any)
+	if !ok || authors["Ada Lovelace"] != float64(2) || authors["Grace Hopper"] != float64(1) {
+		t.Fatalf("author facets = %v, want Ada 2 and Grace 1", buckets["author"])
 	}
 }
