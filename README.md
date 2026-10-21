@@ -195,6 +195,273 @@ Count the documents a query matches per space and author, without returning them
 
 Response fields: `schemaVersion`, `tool`, `dbPath`, `request`, `total` (matching documents), and `facets`; there are no result rows. The tool groups by page internally, so `total` counts documents even when a page has several matching chunks, and counts describe the whole matching set before `topK`.
 
+## Query semantics
+
+The tool schemas cover the argument names and types; this section covers what the arguments do once they reach the indexer.
+
+### Defaults and how they interact
+
+The server sends the ranking arguments explicitly rather than leaving them empty, so a client sees the same numbers the CLI's defaults produce: `mode` `hybrid`, `fusion` `weighted`, `alpha` `0.70`, `rrfK` `60`, `topK` `10`, `candidateK` `50`.
+
+Three of them bound each other:
+
+- `candidateK` is how many candidates each retrieval channel fetches before fusion.
+- `topK` truncates the fused ranking, so it caps everything downstream. Asking for more than `topK` rows cannot return more rows, however large `limit` is.
+- `limit` pages through that truncated set, starting at `offset`. `limit: 0` inherits `topK`; it does not mean unlimited.
+
+`total` therefore reports the size of the truncated set, not the number of matching documents. A query with two matching pages and `topK: 1` answers `total: 1` while the facets count both.
+
+### What is rejected, and what is silently defaulted
+
+Returned as a tool error: `group` set to anything but `document`; a negative `maxPerPage`, `depthMin`, `depthMax` or `embeddingDim`; `depthMin` greater than `depthMax`; an `updatedSince` that is neither an age (`30d`, `2w`, `12h`) nor a date; an unknown facet dimension (`unknown facet "x" (available: space, author)`).
+
+Not rejected: a value of the wrong JSON type falls back to the default. `limit: "ten"` behaves like `limit: 0` (ten results), `alpha: "high"` like `0.70`, and `seedOnly: "yes"` like `false`. Send numbers as numbers and booleans as booleans; the server cannot tell a typo from an intentional default.
+
+A query that is empty or only whitespace returns an empty result set, not an error; a missing `query` (or a non-string one) is rejected. Whitespace is trimmed before matching.
+
+### `expand`
+
+`expand: N` widens each result to a window of up to `N` chunks on either side of the match. `chunkText` becomes that window, `baseChunkText` keeps the matched chunk, and `contextStartIndex`, `contextEndIndex` and `contextChunkCount` describe the window (a start index of `0` is omitted, like every other zero-valued optional field).
+
+### `group: "document"`
+
+One result per page, carrying the page's best-scoring chunk: `fusedScore` is that chunk's score, `chunkIndex` is its position, and `chunkCount` is how many of the page's chunks matched. `total` counts documents. `maxPerPage` has no effect here — there is already one row per page.
+
+### Facet counting
+
+Counts are document counts over the full matching set, taken before `topK`, so they describe the corpus rather than the page of results. Rules worth knowing:
+
+- A page counts once per dimension however many of its chunks matched.
+- `author` counts a page for its creator *and* for its last modifier, so the buckets can sum to more than `total`. That matches the `author` filter, which also matches either name.
+- A page whose metadata has no value for the dimension adds no bucket, so buckets can sum to less than `total`.
+- Only the dimensions asked for are counted; the `confluence.facets` tool defaults to `space` and `author`.
+
+## Response reference
+
+Every tool returns one JSON document as its text content. The envelope below is this server's; `results` and `facets` are the indexer's payloads, unchanged.
+
+### Result objects
+
+Each `results[]` entry is the indexer's `Result` object: see [Output Reference → *JSON Output (`query --json`)*](https://github.com/gkoos/confluence2md-indexer/blob/main/docs/output-reference.md#json-output-query---json) for the field list and how the scores are computed. Which fields appear:
+
+| Field | When |
+|---|---|
+| `rank`, `chunkId`, `documentId`, `pageId`, `title`, `localPath`, `spaceKey`, `sourceUrl`, `chunkText`, `chunkIndex`, `lexicalScore`, `vectorScore`, `fusedScore`, `fusion` | always |
+| `canonicalUrl` | when the crawler recorded one; it is the link to open, never reconstructed from `sourceUrl` |
+| `baseChunkText`, `contextStartIndex`, `contextEndIndex`, `contextChunkCount` | when `expand` widened the result |
+| `chunkCount` | in `group: "document"` mode |
+| `metadataBoost`, `metadataFactors` | reserved for ranking priors, which this server does not expose yet |
+
+An empty result set is `[]`, never `null`, so a client can iterate it without a nil check. The `facets` block appears in a search payload only when the call asked for facets.
+
+### The `request` echo
+
+`request` shows what the server sent to the indexer, not the arguments as you typed them:
+
+- Keys are the indexer's Go field names — `Text`, `Mode`, `RRFK`, `TopK`, `Limit`, `Filters.SpaceKey` — not the MCP argument names.
+- Embedding overrides are never echoed; the indexer tags them out of its request contract. Priors are excluded the same way, so they will not appear once they are exposed.
+- `Filters` appears in full with every filter key, empty when unused, and includes `Candidate`, the internal candidate limit.
+- Values are as sent: `Limit` reads `0` even though the effective page size is `topK`.
+- `Group`, `MaxPerPage` and `Facets` are omitted when unset, so a default call's echo has no trace of them.
+
+### Sample payloads
+
+A chunk-level search with default arguments against a three-page fixture index:
+
+```json
+{
+  "schemaVersion": "1",
+  "tool": "confluence.search",
+  "dbPath": "/path/to/confluence2md-index.db",
+  "count": 2,
+  "total": 2,
+  "request": {
+    "Text": "apple",
+    "Mode": "hybrid",
+    "Fusion": "weighted",
+    "Alpha": 0.7,
+    "RRFK": 60,
+    "TopK": 10,
+    "Offset": 0,
+    "Limit": 0,
+    "CandidateK": 50,
+    "Expand": 0,
+    "Filters": {
+      "SpaceKey": "",
+      "PageID": "",
+      "FromDate": "",
+      "ToDate": "",
+      "Candidate": 0
+    }
+  },
+  "results": [
+    {
+      "rank": 1,
+      "chunkId": "2001:000000",
+      "documentId": "2001",
+      "pageId": "2001",
+      "title": "Apple Runbook",
+      "localPath": "apple.md",
+      "spaceKey": "ENG",
+      "sourceUrl": "https://example.test/pages/2001",
+      "canonicalUrl": "https://example.test/pages/2001-canonical",
+      "chunkText": "# Apple Runbook\n\nThe apple rotation happens on Mondays.",
+      "chunkIndex": 0,
+      "lexicalScore": 1,
+      "vectorScore": 1,
+      "fusedScore": 1,
+      "fusion": "weighted"
+    },
+    {
+      "rank": 2,
+      "chunkId": "2002:000000",
+      "documentId": "2002",
+      "pageId": "2002",
+      "title": "On-call Handbook",
+      "localPath": "oncall.md",
+      "spaceKey": "OPS",
+      "sourceUrl": "https://example.test/pages/2002",
+      "chunkText": "# On-call Handbook\n\nEscalate the apple incident to the ops channel.",
+      "chunkIndex": 0,
+      "lexicalScore": 0,
+      "vectorScore": 0,
+      "fusedScore": 0,
+      "fusion": "weighted"
+    }
+  ]
+}
+```
+
+The same index with `group: "document"` and `query: "deployment"`: two chunks of one page matched, so the page appears once and `total` counts the page.
+
+```json
+{
+  "count": 1,
+  "total": 1,
+  "results": [
+    {
+      "rank": 1,
+      "chunkId": "2003:000000",
+      "documentId": "2003",
+      "pageId": "2003",
+      "title": "Deployment Runbook",
+      "localPath": "deploy.md",
+      "spaceKey": "ENG",
+      "sourceUrl": "https://example.test/pages/2003",
+      "chunkText": "# Deployment\n\nIntro text.",
+      "chunkIndex": 0,
+      "lexicalScore": 1,
+      "vectorScore": 1,
+      "fusedScore": 1,
+      "fusion": "weighted",
+      "chunkCount": 2
+    }
+  ]
+}
+```
+
+(Abridged: `schemaVersion`, `tool`, `dbPath` and `request` are as in the sample above, with `"Group": "document"` added to the echo.)
+
+With `expand: 2`, the matched chunk arrives inside its window — `chunkText` is the window, `baseChunkText` is what actually matched:
+
+```json
+{
+  "title": "Deployment Runbook",
+  "chunkText": "# Deployment\n\nIntro text.\n\n## Rollback\n\nSteps to undo the change.",
+  "baseChunkText": "## Rollback\n\nSteps to undo the change.",
+  "chunkIndex": 1,
+  "contextEndIndex": 1,
+  "contextChunkCount": 2
+}
+```
+
+`confluence.facets` for the same query, defaulting to both dimensions. `total` counts documents and each bucket is a document count:
+
+```json
+{
+  "schemaVersion": "1",
+  "tool": "confluence.facets",
+  "dbPath": "/path/to/confluence2md-index.db",
+  "total": 2,
+  "facets": {
+    "space": { "ENG": 1, "OPS": 1 },
+    "author": { "Ada Lovelace": 2, "Grace Hopper": 1 }
+  },
+  "request": {
+    "Text": "apple",
+    "Mode": "hybrid",
+    "Group": "document",
+    "Facets": ["space", "author"]
+  }
+}
+```
+
+(Abridged: `request` shows only the fields that matter for this call — the rest match the first sample.)
+
+`confluence.stats` on the same index. The `stats` object is the indexer's, complete:
+
+```json
+{
+  "schemaVersion": "1",
+  "tool": "confluence.stats",
+  "dbPath": "/path/to/confluence2md-index.db",
+  "stats": {
+    "runs": 1,
+    "documents": 3,
+    "chunks": 4,
+    "embeddings": 4,
+    "vectorReady": true,
+    "vectorName": "bow-local:fnv1a@256",
+    "vectorCapability": "lexical",
+    "embeddingModels": [
+      { "name": "bow-local:fnv1a@256", "dimension": 256, "chunks": 4 }
+    ],
+    "metadata": {
+      "documents": 3,
+      "withAuthors": 3,
+      "withLinks": 0,
+      "withAttachments": 0,
+      "withComments": 0,
+      "seeds": 0,
+      "nested": 0,
+      "hosts": 0
+    },
+    "corpus": {
+      "runId": "21566c45e992fe22",
+      "crawlStartedAt": "",
+      "crawlCompletedAt": "2026-02-01T00:00:00Z",
+      "crawlSucceededAt": "",
+      "crawlMode": "",
+      "seedCount": 0,
+      "pageCount": 3,
+      "indexedAt": "2026-10-21T21:20:43.8201126Z"
+    }
+  }
+}
+```
+
+`confluence.list_spaces`:
+
+```json
+{
+  "schemaVersion": "1",
+  "tool": "confluence.list_spaces",
+  "dbPath": "/path/to/confluence2md-index.db",
+  "count": 2,
+  "spaces": ["ENG", "OPS"]
+}
+```
+
+## Known limitations
+
+- **Chunk-level text.** A result carries a chunk, or a window of chunks with `expand`; no tool returns a whole page. `group: "document"` plus `expand` is the closest equivalent.
+- **Attachments and comments are metadata only.** The index stores their counts, so a search can filter on them but not read them.
+- **No ranking priors yet.** Recency, authority, seed, depth and richness weighting exist in the indexer but are not exposed as arguments; see gkoos/confluence2md-indexer#59.
+- **No index build or refresh.** The server only reads. Building is `confluence2md-indexer index <folder>`, and `stats.corpus.crawlCompletedAt` is how you notice the index fell behind the crawl.
+- **stdio only.** There is no HTTP or SSE transport.
+- **`confluence.list_spaces` is the one direct read.** It queries `documents.space_key` itself because `pkg/indexerapi` publishes no space list, and it returns keys only — no titles, counts or hierarchy.
+- **The caller owns the trust boundary.** `dbPath` opens any SQLite file the process can read, and `embeddingBaseURL` with `embeddingApiKeyEnv` can send a named environment variable's value to any host. Where the indexed content is untrusted, treat those two as privileged.
+
 ## Development
 
 ### Build
@@ -238,6 +505,10 @@ Release builds stamp the binary through `ldflags`; the version is reported in th
 ## Troubleshooting
 
 - **No results:** verify `CONFLUENCE_INDEX_DB` points to a built index containing the `chunks_fts` and `embeddings` tables.
+- **No results although `stats` counts documents:** a filter is excluding everything — `spaceKey` is an exact match (read the keys with `confluence.list_spaces`), `updatedSince` is relative to now, and `depthMin: 1` drops seed pages. Also compare `stats.corpus.crawlCompletedAt` with `stats.corpus.indexedAt`: a later timestamp means the indexing run read a moving corpus, so the page may have moved.
+- **`facets` missing from a search payload:** only `confluence.facets` always returns the block. A search omits it unless the call passes `facets`.
+- **`total` smaller than the facet buckets:** `topK` truncated the ranked set. Raise `topK` for more rows, or read the buckets for the match counts.
+- **A filter or limit had no effect:** an argument sent with the wrong JSON type falls back to its default — see [Query semantics](#what-is-rejected-and-what-is-silently-defaulted).
 - **WSL + Windows binary:** use the Linux binary with a native Linux DB path — see the WSL note above.
 - **Tools not appearing in chat:** restart your MCP client after registration.
 
