@@ -8,7 +8,7 @@ import (
 )
 
 // The indexer messages below are quoted verbatim from confluence2md-indexer
-// v0.5.0, so a change in wording surfaces here rather than in a tool result.
+// v0.9.0, so a change in wording surfaces here rather than in a tool result.
 func TestQueryErrorAddsActionableGuidance(t *testing.T) {
 	tests := []struct {
 		name     string

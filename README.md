@@ -13,7 +13,7 @@ MCP server that exposes [confluence2md-indexer](https://github.com/gkoos/conflue
 
 ## Requirements
 
-- A SQLite index built by [confluence2md-indexer](https://github.com/gkoos/confluence2md-indexer) **v0.5.0 or newer**
+- A SQLite index built by [confluence2md-indexer](https://github.com/gkoos/confluence2md-indexer) **v0.9.0 or newer**
 - Source content must use [`confluence2md`](https://github.com/gkoos/confluence2md) metadata format — other formats are not supported
 
 ## Environment Variables
@@ -37,13 +37,11 @@ The remaining `CONFLUENCE2MD_EMBEDDING_*` variables of the indexer are honoured 
 
 ## Upgrading an Index
 
-This server links `confluence2md-indexer` v0.5.0, which reads document metadata columns that indexes built by earlier indexer versions do not have. Such indexes are not migrated in place, so rebuild once after upgrading:
+This server links `confluence2md-indexer` v0.9.0. That release still writes schema version 1, the schema introduced with the document metadata columns, so an index built by any v0.5.0-or-newer indexer keeps working without a rebuild. A database written by an older build is refused with a message naming the rebuild command:
 
 ```bash
 confluence2md-indexer index ./output --rebuild
 ```
-
-Querying an index built by an older indexer fails with a database error; rebuilding is the supported fix.
 
 ## Installation
 
@@ -188,7 +186,7 @@ GOOS=linux GOARCH=amd64 go build -o bin/confluence2md-mcp-linux-amd64 .
 go test ./... -run TestMCPStdioSmoke -v
 ```
 
-The suite also contains an offline end-to-end test: it installs the pinned indexer (`go install ...@v0.5.0`), builds an index from a temporary corpus with the default `bow-local` provider, and drives the server over stdio — checking the tool list, the space list, a search narrowed by space and the provider-mismatch error. It needs no API key or running service, and skips only when the indexer CLI cannot be installed.
+The suite also contains an offline end-to-end test: it installs the pinned indexer (`go install ...@v0.9.0`), builds an index from a temporary corpus with the default `bow-local` provider, and drives the server over stdio — checking the tool list, the space list, a search narrowed by space and the provider-mismatch error. It needs no API key or running service, and skips only when the indexer CLI cannot be installed.
 
 ### Version
 

@@ -19,7 +19,7 @@ import (
 // indexerModuleVersion pins the indexer release that builds the fixture index. It
 // matches the version this module requires, so the test follows the same paths a
 // release build takes.
-const indexerModuleVersion = "v0.5.0"
+const indexerModuleVersion = "v0.9.0"
 
 var (
 	installIndexerOnce sync.Once
