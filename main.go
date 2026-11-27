@@ -28,6 +28,26 @@ var version = "dev"
 // server and one from the indexer describe themselves identically.
 const schemaVersion = indexerapi.OutputSchemaVersion
 
+// tools lists every tool by its generic name. Each is registered twice: as
+// confluence.<suffix>, which existing clients use, and as the bare <suffix>, which
+// reads naturally once an index holds sources other than Confluence.
+var tools = []struct {
+	suffix   string
+	register func(*server.MCPServer, string)
+}{
+	{"search", searchTool},
+	{"list_spaces", listSpacesTool},
+	{"list_sources", listSourcesTool},
+	{"stats", statsTool},
+	{"facets", facetsTool},
+}
+
+// toolNames returns the names one tool answers to; the payload's tool field echoes the
+// name the client called.
+func toolNames(suffix string) []string {
+	return []string{"confluence." + suffix, suffix}
+}
+
 func main() {
 	s := server.NewMCPServer(
 		serverName,
@@ -36,12 +56,33 @@ func main() {
 		server.WithRecovery(),
 	)
 
-	searchTool := mcp.NewTool("confluence.search",
+	for _, tool := range tools {
+		for _, name := range toolNames(tool.suffix) {
+			tool.register(s, name)
+		}
+	}
+
+	startupDB, err := dbPathFor(nil)
+	if err != nil {
+		// The file is read again on every call, so fixing it needs no restart.
+		log.Printf("warning: %v", err)
+		startupDB = defaultDBFile
+	}
+	log.Printf("starting %s %s: dbPath=%s", serverName, version, startupDB)
+	if err := server.ServeStdio(s); err != nil {
+		log.Printf("server error: %v", err)
+		os.Exit(1)
+	}
+}
+
+// searchTool registers the search tool under one name.
+func searchTool(s *server.MCPServer, name string) {
+	tool := mcp.NewTool(name,
 		append([]mcp.ToolOption{
 			mcp.WithDescription("Search indexed Confluence content from a local SQLite DB"),
 		}, searchArgumentOptions()...)...)
 
-	s.AddTool(searchTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	s.AddTool(tool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := request.GetArguments()
 
 		queryText, err := request.RequireString("query")
@@ -68,7 +109,7 @@ func main() {
 
 		payload := map[string]any{
 			"schemaVersion": schemaVersion,
-			"tool":          "confluence.search",
+			"tool":          name,
 			"dbPath":        effectiveDBPath,
 			"request":       req,
 			"count":         len(results),
@@ -81,23 +122,6 @@ func main() {
 		b, _ := json.MarshalIndent(payload, "", "  ")
 		return mcp.NewToolResultText(string(b)), nil
 	})
-
-	listSpacesTool(s)
-	listSourcesTool(s)
-	statsTool(s)
-	facetsTool(s)
-
-	startupDB, err := dbPathFor(nil)
-	if err != nil {
-		// The file is read again on every call, so fixing it needs no restart.
-		log.Printf("warning: %v", err)
-		startupDB = defaultDBFile
-	}
-	log.Printf("starting %s %s: dbPath=%s", serverName, version, startupDB)
-	if err := server.ServeStdio(s); err != nil {
-		log.Printf("server error: %v", err)
-		os.Exit(1)
-	}
 }
 
 // busyGuidance tells a client that a locked index is a passing condition.

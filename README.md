@@ -112,6 +112,8 @@ Add to `~/.codex/config.json`:
 
 ## Tools
 
+Each tool is registered under two names that behave identically: `confluence.search`, `confluence.list_spaces`, `confluence.list_sources`, `confluence.stats` and `confluence.facets`, and the bare `search`, `list_spaces`, `list_sources`, `stats` and `facets`. The bare names suit an index that holds sources other than Confluence; the `confluence.*` names stay for existing clients and are not deprecated. The `tool` field of a response echoes the name the client called. The sections below use the `confluence.*` names.
+
 ### `confluence.search`
 
 Search indexed Confluence content from a local SQLite DB.
