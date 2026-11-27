@@ -15,8 +15,8 @@ import (
 
 // listSpacesTool registers confluence.list_spaces, which lets a model discover the
 // spaces an index contains instead of guessing space keys for filters.
-func listSpacesTool(s *server.MCPServer) {
-	tool := mcp.NewTool("confluence.list_spaces",
+func listSpacesTool(s *server.MCPServer, name string) {
+	tool := mcp.NewTool(name,
 		mcp.WithDescription("List the Confluence space keys present in a local SQLite index"),
 		mcp.WithString("dbPath",
 			mcp.Description("Optional path to SQLite DB. Defaults to CONFLUENCE_INDEX_DB, then the configuration file, then confluence2md-index.db"),
@@ -36,7 +36,7 @@ func listSpacesTool(s *server.MCPServer) {
 
 		payload := map[string]any{
 			"schemaVersion": schemaVersion,
-			"tool":          "confluence.list_spaces",
+			"tool":          name,
 			"dbPath":        effectiveDBPath,
 			"count":         len(spaces),
 			"spaces":        spaces,

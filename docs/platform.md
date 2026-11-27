@@ -8,7 +8,7 @@ Three tools that together form a complete local Confluence knowledge pipeline â€
 |------|------|
 | [`confluence2md`](https://github.com/gkoos/confluence2md) | Crawls Confluence and exports pages as local Markdown files |
 | [`confluence2md-indexer`](https://github.com/gkoos/confluence2md-indexer) | Indexes the Markdown export into a searchable SQLite database |
-| [`confluence2md-mcp`](https://github.com/gkoos/confluence2md-mcp) | Serves the index to AI clients through five MCP tools: `confluence.search`, `confluence.stats`, `confluence.facets`, `confluence.list_spaces` and `confluence.list_sources` |
+| [`confluence2md-mcp`](https://github.com/gkoos/confluence2md-mcp) | Serves the index to AI clients through five MCP tools: `confluence.search`, `confluence.stats`, `confluence.facets`, `confluence.list_spaces` and `confluence.list_sources`, each also registered under its bare name (`search`, `stats`, `facets`, `list_spaces`, `list_sources`) |
 
 ## Architecture
 
@@ -26,7 +26,7 @@ Reads the Markdown output directory, chunks each page, computes vector embedding
 
 ### 3. Serve â€” `confluence2md-mcp`
 
-Wraps `confluence2md-indexer` as a stdio MCP server and exposes five tools to any MCP-compatible AI client (VS Code Copilot, Claude Code, OpenAI Codex, etc.):
+Wraps `confluence2md-indexer` as a stdio MCP server and exposes five tools to any MCP-compatible AI client (VS Code Copilot, Claude Code, OpenAI Codex, etc.), each under a `confluence.*` name and a bare alias:
 
 | Tool | Returns |
 |------|---------|

@@ -13,8 +13,8 @@ import (
 // listSourcesTool registers confluence.list_sources, which names the sources an index
 // holds with their document and chunk counts, so a model can pick ids for the sources
 // filter instead of guessing them.
-func listSourcesTool(s *server.MCPServer) {
-	tool := mcp.NewTool("confluence.list_sources",
+func listSourcesTool(s *server.MCPServer, name string) {
+	tool := mcp.NewTool(name,
 		mcp.WithDescription("List the sources in a local SQLite index with their type and document and chunk counts"),
 		mcp.WithString("dbPath",
 			mcp.Description("Optional path to SQLite DB. Defaults to CONFLUENCE_INDEX_DB, then the configuration file, then confluence2md-index.db"),
@@ -38,7 +38,7 @@ func listSourcesTool(s *server.MCPServer) {
 
 		payload := map[string]any{
 			"schemaVersion": schemaVersion,
-			"tool":          "confluence.list_sources",
+			"tool":          name,
 			"dbPath":        effectiveDBPath,
 			"count":         len(sources),
 			"sources":       sources,

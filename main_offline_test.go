@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -313,6 +314,38 @@ func TestOfflineLegacyIndexIsRefusedByEveryTool(t *testing.T) {
 		text, isError := toolResult(t, session.call(10+i, tool, map[string]any{}))
 		if !isError || !strings.Contains(text, "--rebuild") {
 			t.Fatalf("%s on a legacy index = %q (error=%v), want rebuild guidance", tool, text, isError)
+		}
+	}
+}
+
+// TestOfflineGenericToolNamesAnswerLikeTheConfluenceNames checks that each tool is also
+// registered under its bare name and echoes the name the client called.
+func TestOfflineGenericToolNamesAnswerLikeTheConfluenceNames(t *testing.T) {
+	session := startSession(t, buildIndex(t, writeCorpus(t)))
+
+	sendMCP(t, session.stdin, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": map[string]any{}})
+	toolsMsg := readMCP(t, session.reader, 15*time.Second)
+	for _, suffix := range []string{"search", "list_spaces", "list_sources", "stats", "facets"} {
+		assertHasTool(t, toolsMsg, suffix)
+		assertHasTool(t, toolsMsg, "confluence."+suffix)
+	}
+
+	for i, suffix := range []string{"search", "list_spaces", "list_sources", "stats", "facets"} {
+		args := map[string]any{}
+		if suffix == "search" || suffix == "facets" {
+			args = map[string]any{"query": "apple", "mode": "lexical"}
+		}
+
+		generic := toolPayload(t, session.call(10+2*i, suffix, args))
+		legacy := toolPayload(t, session.call(11+2*i, "confluence."+suffix, args))
+
+		if generic["tool"] != suffix || legacy["tool"] != "confluence."+suffix {
+			t.Fatalf("%s: tool fields = %v / %v, want each to echo the called name", suffix, generic["tool"], legacy["tool"])
+		}
+		delete(generic, "tool")
+		delete(legacy, "tool")
+		if !reflect.DeepEqual(generic, legacy) {
+			t.Fatalf("%s: the generic and confluence.* payloads differ:\n%v\n%v", suffix, generic, legacy)
 		}
 	}
 }
