@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gkoos/confluence2md-indexer/pkg/indexerapi"
 	// The indexer writes the index through this driver. Listing space keys is the
 	// only read of the file this server performs on its own.
 	_ "github.com/glebarez/go-sqlite"
@@ -70,6 +71,12 @@ func listSpaces(ctx context.Context, dbPath string) ([]string, error) {
 	// database, which hides a mistyped path behind an empty space list.
 	if _, err := os.Stat(absPath); err != nil {
 		return nil, fmt.Errorf("open index %s: %v; build one with: confluence2md-indexer index <folder>", absPath, err)
+	}
+
+	// Stats validates the schema version, so a legacy index gets the same rebuild
+	// guidance as every other tool instead of an unchecked read.
+	if _, err := indexerapi.Stats(ctx, absPath); err != nil {
+		return nil, fmt.Errorf("read spaces from %s: %w", absPath, err)
 	}
 
 	database, err := sql.Open("sqlite", filepath.ToSlash(absPath))

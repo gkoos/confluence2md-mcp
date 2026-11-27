@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -289,6 +290,31 @@ func resultTitles(t *testing.T, payload map[string]any) []string {
 	}
 
 	return titles
+}
+
+// TestOfflineLegacyIndexIsRefusedByEveryTool checks that an index with an older
+// schema version gets rebuild guidance from list_spaces as well as from search.
+func TestOfflineLegacyIndexIsRefusedByEveryTool(t *testing.T) {
+	dbPath := buildIndex(t, writeCorpus(t))
+
+	legacy, err := sql.Open("sqlite", filepath.ToSlash(dbPath))
+	if err != nil {
+		t.Fatalf("open fixture index: %v", err)
+	}
+	if _, err := legacy.Exec("PRAGMA user_version = 1;"); err != nil {
+		t.Fatalf("downgrade fixture index: %v", err)
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatalf("close fixture index: %v", err)
+	}
+
+	session := startSession(t, dbPath)
+	for i, tool := range []string{"confluence.list_spaces", "confluence.stats"} {
+		text, isError := toolResult(t, session.call(10+i, tool, map[string]any{}))
+		if !isError || !strings.Contains(text, "--rebuild") {
+			t.Fatalf("%s on a legacy index = %q (error=%v), want rebuild guidance", tool, text, isError)
+		}
+	}
 }
 
 // TestOfflineIndexServesSearchAndSpaces covers an index built by the pinned
