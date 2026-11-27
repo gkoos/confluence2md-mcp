@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.0](https://github.com/gkoos/confluence2md-mcp/compare/v0.5.0...v0.6.0) (2026-11-27)
+
+
+### Features
+
+* filter and facet by source, and list sources ([#35](https://github.com/gkoos/confluence2md-mcp/issues/35)) ([696c388](https://github.com/gkoos/confluence2md-mcp/commit/696c388e4612405ae8c4adfdd48158a55aa8ec83))
+* link confluence2md-indexer v1.0.0 (schema version 2) ([#32](https://github.com/gkoos/confluence2md-mcp/issues/32)) ([28a049a](https://github.com/gkoos/confluence2md-mcp/commit/28a049ae6e1086d0a168ef1facbdd401721ad8ce))
+* read the indexer configuration file ([#34](https://github.com/gkoos/confluence2md-mcp/issues/34)) ([06ed35a](https://github.com/gkoos/confluence2md-mcp/commit/06ed35ac7f0d81223933ad74fffa3b4bffd70238))
+* register every tool under a generic name too ([#37](https://github.com/gkoos/confluence2md-mcp/issues/37)) ([28c44ce](https://github.com/gkoos/confluence2md-mcp/commit/28c44cee4196910e6b1e0c665a650dae899f154e))
+* report a locked index as retryable and list spaces through the indexer API ([#36](https://github.com/gkoos/confluence2md-mcp/issues/36)) ([da5b617](https://github.com/gkoos/confluence2md-mcp/commit/da5b6174e809bede72ca01c2a9360abffeab98ba))
+
 ## [0.5.0](https://github.com/gkoos/confluence2md-mcp/compare/v0.4.0...v0.5.0) (2026-10-21)
 
 
