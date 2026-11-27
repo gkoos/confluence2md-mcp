@@ -11,7 +11,7 @@ import (
 )
 
 // defaultFacetDimensions is what confluence.facets counts when the caller does not pick.
-var defaultFacetDimensions = []string{"space", "author"}
+var defaultFacetDimensions = []string{"space", "author", "source"}
 
 // facetsTool registers confluence.facets: the same request surface as a search, but only
 // the shape of the matching set. A client asks "where does this query live" without
@@ -19,7 +19,7 @@ var defaultFacetDimensions = []string{"space", "author"}
 func facetsTool(s *server.MCPServer) {
 	tool := mcp.NewTool("confluence.facets",
 		append([]mcp.ToolOption{
-			mcp.WithDescription("Count the documents a search matches per space and author, without returning them"),
+			mcp.WithDescription("Count the documents a search matches per space, author and source, without returning them"),
 		}, searchArgumentOptions()...)...)
 
 	s.AddTool(tool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {

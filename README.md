@@ -13,7 +13,7 @@ MCP server that exposes [confluence2md-indexer](https://github.com/gkoos/conflue
 
 ## Requirements
 
-- A SQLite index at schema version 2, written by [confluence2md-indexer](https://github.com/gkoos/confluence2md-indexer) **v1.0.0 or newer**. This server links v1.1.0; an index from an older release is refused with a message naming the rebuild command.
+- A SQLite index at schema version 2, written by [confluence2md-indexer](https://github.com/gkoos/confluence2md-indexer) **v1.0.0 or newer**. This server links v1.2.0; an index from an older release is refused with a message naming the rebuild command.
 - Source content must use [`confluence2md`](https://github.com/gkoos/confluence2md) metadata format — other formats are not supported
 
 ## Environment Variables
@@ -136,6 +136,7 @@ Search indexed Confluence content from a local SQLite DB.
 | `fromDate` | | Lower bound `YYYY-MM-DD` |
 | `toDate` | | Upper bound `YYYY-MM-DD` |
 | `spaces` | | Filter by any of several space keys; wins over `spaceKey` |
+| `sources` | | Filter by any of several source ids; read them with `confluence.list_sources` |
 | `host` | | Filter by crawled site host |
 | `author` | | Creator or last modifier name, case-insensitive |
 | `createdBy` | | Creator name only |
@@ -144,7 +145,7 @@ Search indexed Confluence content from a local SQLite DB.
 | `seedOnly` | | Only the pages the crawl started from |
 | `hasAttachments` | | Only pages that carry at least one attachment |
 | `updatedSince` | | Modified within an age (`30d`, `2w`, `12h`) or after an absolute date (`2026-01-01`) |
-| `facets` | | Count documents per bucket over the ranked candidate set (bounded by `candidateK`), before `topK`: `space`, `author` |
+| `facets` | | Count documents per bucket over the ranked candidate set (bounded by `candidateK`), before `topK`: `space`, `author`, `source` |
 | `embeddingProvider` | | Override the provider for this call: `bow-local` \| `openai` \| `openai-compatible` |
 | `embeddingModel` | | Override the embedding model |
 | `embeddingDim` | | Override the embedding dimension |
@@ -168,7 +169,7 @@ Response fields:
 | `count` | Number of results returned in this response |
 | `total` | Results available after ranking — `topK` caps it — and before `offset`/`limit`; in `group: "document"` mode it counts documents. It is not the number of matching documents when `topK` truncates: read `facets` for that |
 | `results` | Array of result objects with chunk text and score breakdown |
-| `facets` | Present only when `facets` was requested: `{ "space": {...}, "author": {...} }` with document counts |
+| `facets` | Present only when `facets` was requested: `{ "space": {...}, "author": {...}, "source": {...} }` with document counts |
 
 Result objects carry `canonicalUrl` when the crawler recorded one, and `chunkCount` in `group: "document"` mode.
 
@@ -183,6 +184,16 @@ List the Confluence space keys the index contains, so a client can scope a searc
 | `dbPath` | | Override DB path. Falls back to `CONFLUENCE_INDEX_DB`, then to `db.path` of the configuration file, then to `confluence2md-index.db` in the current working directory. |
 
 Response fields: `schemaVersion`, `tool`, `dbPath`, `count`, and `spaces` — a sorted array of space key strings, empty when the index holds no spaces.
+
+### `confluence.list_sources`
+
+List the sources the index holds, so a client can scope a search with `sources` without knowing the ids in advance. An index built from a Confluence crawl and a folder of notes has two sources with different types.
+
+| Argument | Required | Description |
+|---|---|---|
+| `dbPath` | | Override DB path. Falls back to `CONFLUENCE_INDEX_DB`, then to `db.path` of the configuration file, then to `confluence2md-index.db` in the current working directory. |
+
+Response fields: `schemaVersion`, `tool`, `dbPath`, `count`, and `sources` — an array ordered by id of `{ "id", "type", "documents", "chunks" }`, empty when the index holds no documents. `type` is `confluence` or `files`. A result carries the same `sourceId` and `sourceType`, and its `documentId` is prefixed with the source id.
 
 ### `confluence.stats`
 
@@ -204,7 +215,7 @@ Response fields: `schemaVersion`, `tool`, `dbPath`, and `stats`. The `stats` obj
 
 ### `confluence.facets`
 
-Count the documents a query matches per space and author, without returning them. It takes the same arguments as `confluence.search` and defaults `facets` to `["space", "author"]`.
+Count the documents a query matches per space, author and source, without returning them. It takes the same arguments as `confluence.search` and defaults `facets` to `["space", "author", "source"]`.
 
 Response fields: `schemaVersion`, `tool`, `dbPath`, `request`, `total` (matching documents), and `facets`; there are no result rows. The tool groups by page internally, so `total` counts documents even when a page has several matching chunks, and counts describe the ranked candidate set before `topK` — bounded by `candidateK`, not every document in the corpus.
 
@@ -226,7 +237,7 @@ Three of them bound each other:
 
 ### What is rejected, and what is silently defaulted
 
-Returned as a tool error: `group` set to anything but `document`; a negative `maxPerPage`, `depthMin`, `depthMax` or `embeddingDim`; `depthMin` greater than `depthMax`; an `updatedSince` that is neither an age (`30d`, `2w`, `12h`) nor a date; an unknown facet dimension (`unknown facet "x" (available: space, author)`).
+Returned as a tool error: `group` set to anything but `document`; a negative `maxPerPage`, `depthMin`, `depthMax` or `embeddingDim`; `depthMin` greater than `depthMax`; an `updatedSince` that is neither an age (`30d`, `2w`, `12h`) nor a date; an unknown facet dimension (`unknown facet "x" (available: space, author, source)`).
 
 Not rejected: values are coerced where they can be. A number or boolean sent as a string is parsed when it parses — `limit: "5"` is 5, `alpha: "0.4"` is 0.4, `seedOnly: "true"` is true — and a list accepts a comma-separated string as well as an array (`spaces: "ENG,OPS"`). When a value cannot be parsed, the argument silently falls back to its default: `limit: "ten"` behaves like `limit: 0`, which inherits `topK`; `alpha: "high"` behaves like `0.70`; `seedOnly: "yes"` behaves like `false`.
 
@@ -249,7 +260,7 @@ Counts are document counts over the ranked candidate set, taken before `topK` bu
 - A page counts once per dimension however many of its chunks matched.
 - `author` counts a page for its creator *and* for its last modifier, so the buckets can sum to more than `total`. That matches the `author` filter, which also matches either name.
 - A page whose metadata has no value for the dimension adds no bucket, so buckets can sum to less than `total`.
-- Only the dimensions asked for are counted; the `confluence.facets` tool defaults to `space` and `author`.
+- Only the dimensions asked for are counted; the `confluence.facets` tool defaults to `space`, `author` and `source`.
 - `topK` does not change the counts — it only changes how many rows come back. `candidateK` is what bounds them.
 
 ## Response reference
@@ -397,7 +408,7 @@ With `expand: 2`, the matched chunk arrives inside its window — `chunkText` is
 }
 ```
 
-`confluence.facets` for the same query, defaulting to both dimensions. `total` counts documents and each bucket is a document count:
+`confluence.facets` for the same query, defaulting to all three dimensions. `total` counts documents and each bucket is a document count:
 
 ```json
 {
@@ -407,13 +418,14 @@ With `expand: 2`, the matched chunk arrives inside its window — `chunkText` is
   "total": 2,
   "facets": {
     "space": { "ENG": 1, "OPS": 1 },
-    "author": { "Ada Lovelace": 2, "Grace Hopper": 1 }
+    "author": { "Ada Lovelace": 2, "Grace Hopper": 1 },
+    "source": { "default": 2 }
   },
   "request": {
     "Text": "apple",
     "Mode": "hybrid",
     "Group": "document",
-    "Facets": ["space", "author"]
+    "Facets": ["space", "author", "source"]
   }
 }
 ```
@@ -437,6 +449,9 @@ With `expand: 2`, the matched chunk arrives inside its window — `chunkText` is
     "vectorCapability": "lexical",
     "embeddingModels": [
       { "name": "bow-local:fnv1a@256", "dimension": 256, "chunks": 4 }
+    ],
+    "sources": [
+      { "id": "default", "type": "confluence", "documents": 3, "chunks": 4 }
     ],
     "metadata": {
       "documents": 3,
@@ -471,6 +486,21 @@ With `expand: 2`, the matched chunk arrives inside its window — `chunkText` is
   "dbPath": "/path/to/confluence2md-index.db",
   "count": 2,
   "spaces": ["ENG", "OPS"]
+}
+```
+
+`confluence.list_sources` on an index built from a Confluence crawl (`wiki`) and a folder of notes (`notes`):
+
+```json
+{
+  "schemaVersion": "1",
+  "tool": "confluence.list_sources",
+  "dbPath": "/path/to/confluence2md-index.db",
+  "count": 2,
+  "sources": [
+    { "id": "notes", "type": "files", "documents": 1, "chunks": 1 },
+    { "id": "wiki", "type": "confluence", "documents": 3, "chunks": 4 }
+  ]
 }
 ```
 
@@ -511,14 +541,15 @@ GOOS=linux GOARCH=amd64 go build -o bin/confluence2md-mcp-linux-amd64 .
 go test ./... -v
 ```
 
-The suite builds the server and drives it over stdio. Four offline end-to-end tests install the pinned indexer (`go install ...@v1.1.0`), build an index from a temporary corpus with the default `bow-local` provider, and check:
+The suite builds the server and drives it over stdio. Offline end-to-end tests install the pinned indexer (`go install ...@v1.2.0`), build an index from a temporary corpus with the default `bow-local` provider, and check:
 
 - the tool list, `confluence.list_spaces`, and a search narrowed by space;
 - result shaping: `group: "document"` with `chunkCount`, `maxPerPage`, and `canonicalUrl`;
 - facet counts attached to a search payload;
-- `confluence.stats`: size, stored embedding identity, metadata coverage and the crawl timestamp; then `confluence.facets`, including the document total for a page with several matching chunks.
+- `confluence.stats`: size, stored embedding identity, metadata coverage and the crawl timestamp; then `confluence.facets`, including the document total for a page with several matching chunks;
+- a multi-source index (a Confluence corpus plus a folder of files): `confluence.list_sources`, the `sources` filter and the `source` facet.
 
-One of the four covers the actionable failure — an index built with a different embedding identity — and a separate smoke test starts the server with no index at all to check the tool list and the missing-database error. Nothing needs an API key or a running service, and the offline tests skip only when the indexer CLI cannot be installed.
+One of them covers the actionable failure — an index built with a different embedding identity — and a separate smoke test starts the server with no index at all to check the tool list and the missing-database error. Nothing needs an API key or a running service, and the offline tests skip only when the indexer CLI cannot be installed.
 
 ### Version
 
