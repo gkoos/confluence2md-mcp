@@ -13,7 +13,7 @@ MCP server that exposes [confluence2md-indexer](https://github.com/gkoos/conflue
 
 ## Requirements
 
-- A SQLite index at schema version 2, written by [confluence2md-indexer](https://github.com/gkoos/confluence2md-indexer) **v1.0.0 or newer**. This server links v1.2.0; an index from an older release is refused with a message naming the rebuild command.
+- A SQLite index at schema version 2, written by [confluence2md-indexer](https://github.com/gkoos/confluence2md-indexer) **v1.0.0 or newer**. This server links v1.3.0; an index from an older release is refused with a message naming the rebuild command.
 - Source content must use [`confluence2md`](https://github.com/gkoos/confluence2md) metadata format — other formats are not supported
 
 ## Environment Variables
@@ -173,7 +173,7 @@ Response fields:
 
 Result objects carry `canonicalUrl` when the crawler recorded one, and `chunkCount` in `group: "document"` mode.
 
-Failures are returned as tool errors that keep the indexer's message and add the fix when the cause is actionable: an embedding mismatch names both identities, a missing or vector-less index names the rebuild command, and a disabled vector channel points at `CONFLUENCE2MD_EMBEDDING_SKIP`. `mode: "lexical"` works without any embedding configuration.
+Failures are returned as tool errors that keep the indexer's message and add the fix when the cause is actionable: an embedding mismatch names both identities, a missing or vector-less index names the rebuild command, and a disabled vector channel points at `CONFLUENCE2MD_EMBEDDING_SKIP`. An index that another process holds locked past the busy timeout — typically an indexing run that is rewriting it — is reported as temporary, with advice to retry; every tool that reads the index does this. `mode: "lexical"` works without any embedding configuration.
 
 ### `confluence.list_spaces`
 
@@ -511,7 +511,7 @@ With `expand: 2`, the matched chunk arrives inside its window — `chunkText` is
 - **Ranking priors come from the configuration file only.** Recency, authority, seed, depth and richness weighting, and per-source weights, are set in `config.yaml` and are not tool arguments; see gkoos/confluence2md-indexer#59.
 - **No index build or refresh.** The server only reads. Building is `confluence2md-indexer index <folder>`, and `stats.corpus.crawlCompletedAt` is the crawl timestamp *stored at index time* — it cannot see a later crawl. To tell whether the index is behind, compare it with the crawler's current `metadata.json` (`last_completed_crawl_completed_at`).
 - **stdio only.** There is no HTTP or SSE transport.
-- **`confluence.list_spaces` is the one direct read.** It queries `documents.space_key` itself because `pkg/indexerapi` publishes no space list, and it returns keys only — no titles, counts or hierarchy.
+- **`confluence.list_spaces` returns keys only** — no titles, counts or hierarchy. Sources without spaces, such as a folder of plain files, contribute no keys.
 - **The caller owns the trust boundary.** `dbPath` opens any SQLite file the process can read, and `embeddingBaseURL` with `embeddingApiKeyEnv` can send a named environment variable's value to any host. Where the indexed content is untrusted, treat those two as privileged.
 
 ## Development
@@ -541,9 +541,10 @@ GOOS=linux GOARCH=amd64 go build -o bin/confluence2md-mcp-linux-amd64 .
 go test ./... -v
 ```
 
-The suite builds the server and drives it over stdio. Offline end-to-end tests install the pinned indexer (`go install ...@v1.2.0`), build an index from a temporary corpus with the default `bow-local` provider, and check:
+The suite builds the server and drives it over stdio. Offline end-to-end tests install the pinned indexer (`go install ...@v1.3.0`), build an index from a temporary corpus with the default `bow-local` provider, and check:
 
 - the tool list, `confluence.list_spaces`, and a search narrowed by space;
+- an index of plain files only: `list_spaces` returns an empty array and results carry an empty `spaceKey`;
 - result shaping: `group: "document"` with `chunkCount`, `maxPerPage`, and `canonicalUrl`;
 - facet counts attached to a search payload;
 - `confluence.stats`: size, stored embedding identity, metadata coverage and the crawl timestamp; then `confluence.facets`, including the document total for a page with several matching chunks;

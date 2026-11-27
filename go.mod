@@ -3,14 +3,14 @@ module github.com/gkoos/confluence2md-mcp
 go 1.26.11
 
 require (
-	github.com/gkoos/confluence2md-indexer v1.2.0
-	github.com/glebarez/go-sqlite v1.23.0
+	github.com/gkoos/confluence2md-indexer v1.3.0
 	github.com/mark3labs/mcp-go v1.3.0
 )
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
+	github.com/glebarez/go-sqlite v1.23.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect

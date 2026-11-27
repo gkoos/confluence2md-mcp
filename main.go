@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -99,10 +100,27 @@ func main() {
 	}
 }
 
+// busyGuidance tells a client that a locked index is a passing condition.
+const busyGuidance = "The index is locked by another process, usually an indexing run that is rewriting it. " +
+	"This is temporary: retry the call in a few seconds."
+
+// withBusyGuidance appends the retry advice when err is the indexer's busy error.
+func withBusyGuidance(message string, err error) string {
+	if errors.Is(err, indexerapi.ErrBusy) {
+		return message + "\n\n" + busyGuidance
+	}
+
+	return message
+}
+
 // queryError explains the failures a caller can act on. The indexer reports what
 // is wrong; this adds what a client of this server can do about it.
 func queryError(dbPath string, err error) string {
 	message := fmt.Sprintf("query failed for %s: %v", dbPath, err)
+
+	if errors.Is(err, indexerapi.ErrBusy) {
+		return withBusyGuidance(message, err)
+	}
 
 	switch {
 	case strings.Contains(message, "embedding mismatch:"):

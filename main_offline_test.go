@@ -20,7 +20,7 @@ import (
 // indexerModuleVersion pins the indexer release that builds the fixture index. It
 // matches the version this module requires, so the test follows the same paths a
 // release build takes.
-const indexerModuleVersion = "v1.2.0"
+const indexerModuleVersion = "v1.3.0"
 
 var (
 	installIndexerOnce sync.Once
@@ -512,6 +512,44 @@ func TestOfflineConfigFileSuppliesTheIndexAndDefaults(t *testing.T) {
 	overridden := toolPayload(t, session.call(4, "confluence.search", map[string]any{"query": "apple", "mode": "lexical", "topK": 1}))
 	if overridden["count"] != float64(1) {
 		t.Fatalf("count = %v, want the topK argument to beat the file", overridden["count"])
+	}
+}
+
+// TestOfflineFilesOnlyIndexHasNoSpaces checks that documents without a space or author
+// neither break list_spaces nor the result fields.
+func TestOfflineFilesOnlyIndexHasNoSpaces(t *testing.T) {
+	notes := t.TempDir()
+	if err := os.WriteFile(filepath.Join(notes, "notes.md"), []byte("# Notes\n\nA local apple note.\n"), 0o644); err != nil {
+		t.Fatalf("write notes: %v", err)
+	}
+
+	dbPath := filepath.Join(t.TempDir(), "files.db")
+	cmd := exec.Command(indexerBinary(t), "index", "--source", "notes="+notes, "--db", dbPath, "--rebuild")
+	cmd.Env = append(os.Environ(), "CONFLUENCE2MD_EMBEDDING_PROVIDER=bow-local")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build files index: %v\n%s", err, out)
+	}
+
+	session := startSession(t, dbPath)
+
+	spaces := toolPayload(t, session.call(2, "confluence.list_spaces", map[string]any{}))
+	if spaces["count"] != float64(0) {
+		t.Fatalf("count = %v, want 0", spaces["count"])
+	}
+	if list, ok := spaces["spaces"].([]any); !ok || len(list) != 0 {
+		t.Fatalf("spaces = %v, want an empty array rather than null", spaces["spaces"])
+	}
+
+	search := toolPayload(t, session.call(3, "confluence.search", map[string]any{
+		"query": "apple", "mode": "lexical", "facets": []string{"space", "author", "source"},
+	}))
+	results, _ := search["results"].([]any)
+	if len(results) != 1 {
+		t.Fatalf("results = %v, want the notes file", results)
+	}
+	first, _ := results[0].(map[string]any)
+	if first["spaceKey"] != "" || first["sourceType"] != "files" {
+		t.Fatalf("result = %v, want an empty spaceKey and sourceType files", first)
 	}
 }
 

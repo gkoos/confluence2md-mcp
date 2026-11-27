@@ -47,5 +47,5 @@ func statsTool(s *server.MCPServer) {
 // statsError names the database and keeps the indexer's message. That message already
 // explains a schema mismatch or a file without an index, so no extra guidance is added.
 func statsError(dbPath string, err error) string {
-	return fmt.Sprintf("stats failed for %s: %v", dbPath, err)
+	return withBusyGuidance(fmt.Sprintf("stats failed for %s: %v", dbPath, err), err)
 }

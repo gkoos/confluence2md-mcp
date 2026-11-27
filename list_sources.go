@@ -29,7 +29,8 @@ func listSourcesTool(s *server.MCPServer) {
 
 		response, err := indexerapi.Stats(ctx, effectiveDBPath)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("list_sources failed for %s: %v", effectiveDBPath, err)), nil
+			message := fmt.Sprintf("list_sources failed for %s: %v", effectiveDBPath, err)
+			return mcp.NewToolResultError(withBusyGuidance(message, err)), nil
 		}
 
 		// The indexer reports an empty list, never null, for an index without documents.
