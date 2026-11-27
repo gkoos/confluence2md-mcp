@@ -164,3 +164,34 @@ func TestBrokenConfigFileIsAToolError(t *testing.T) {
 		t.Fatal("dbPathFor must report an unreadable file")
 	}
 }
+
+func TestSuppliedEmbeddingArgumentsCanClearConfiguredValues(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv(envIndexConfig, writeConfig(t, `
+embedding:
+  provider: bow-local
+  dimension: 128
+  query_prefix: "q: "
+  skip: true
+`))
+
+	req, _, err := buildQueryRequest("page", map[string]any{}, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("buildQueryRequest: %v", err)
+	}
+	if !req.Embedding.Skip || req.Embedding.QueryPrefix != "q: " || req.Embedding.Dimension != 128 {
+		t.Fatalf("file values lost: %+v", req.Embedding)
+	}
+
+	req, _, err = buildQueryRequest("page", map[string]any{
+		"embeddingSkip":        false,
+		"embeddingQueryPrefix": "",
+		"embeddingDim":         float64(0),
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("buildQueryRequest: %v", err)
+	}
+	if req.Embedding.Skip || req.Embedding.QueryPrefix != "" || req.Embedding.Dimension != 0 {
+		t.Fatalf("supplied empty values must override the file: %+v", req.Embedding)
+	}
+}

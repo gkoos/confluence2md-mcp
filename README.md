@@ -45,7 +45,7 @@ The file supplies:
 - the `embedding` section, so the query resolves the identity the index was built with;
 - the `query` section: `mode`, `fusion`, `alpha`, `top_k`, `candidate_k`, `expand`, `priors`, `prior_strength`, `recency_half_life` and `source_weights`.
 
-Precedence, highest first: a tool argument, an environment variable, the file, the built-in default. The file is read again on every tool call, so an edit applies to the next call and **no restart is needed**; an unreadable or invalid file is reported as a tool error naming the file. The `sources` list of the file concerns indexing and is ignored.
+Precedence, highest first: a tool argument, an environment variable, the file, the built-in default. The file is read again on every tool call, so an edit applies to the next call and **no restart is needed**; an unreadable or invalid file is reported as a tool error naming the file. The `sources` list of the file concerns indexing and is ignored. An embedding argument counts as set whenever the call supplies it, whatever its value, so `embeddingQueryPrefix: ""`, `embeddingDim: 0` or `embeddingSkip: false` clear or reset the configured value for that call.
 
 Configured `priors` and `source_weights` apply to every search and facets call, and a search then reports `metadataBoost`, `metadataFactors` and `sourceWeight` on its results. They are not tool arguments.
 

@@ -92,26 +92,27 @@ func buildQueryRequest(text string, args map[string]any, now time.Time) (indexer
 	return req, resolveDBPath(args, settings), nil
 }
 
-// embeddingPresence marks the embedding arguments the caller actually set, so an
-// argument overrides the environment and the file while an omitted one does not.
+// embeddingPresence marks the embedding arguments the caller supplied, whatever their
+// value, following the indexer's presence contract: an empty prefix, a zero dimension or
+// a false skip is a decision that overrides the environment and the file, while an
+// omitted argument leaves them in force.
 func embeddingPresence(args map[string]any) indexerapi.EmbeddingPresent {
-	set := func(key string) bool { return getString(args, key, "") != "" }
-
-	dimension, hasDimension := optionalInt(args, "embeddingDim")
-	_, hasContext := args["embeddingContext"]
+	supplied := func(key string) bool {
+		value, ok := args[key]
+		return ok && value != nil
+	}
 
 	return indexerapi.EmbeddingPresent{
-		Provider:    set("embeddingProvider"),
-		Model:       set("embeddingModel"),
-		BaseURL:     set("embeddingBaseURL"),
-		APIKeyEnv:   set("embeddingApiKeyEnv"),
-		AuthHeader:  set("embeddingAuthHeader"),
-		AuthScheme:  set("embeddingAuthScheme"),
-		DocPrefix:   set("embeddingDocumentPrefix"),
-		QueryPrefix: set("embeddingQueryPrefix"),
-		Dimension:   hasDimension && dimension > 0,
-		Context:     hasContext && args["embeddingContext"] != nil,
-		// An explicit false is what a client sends for "unset", so only true counts.
-		Skip: getBool(args, "embeddingSkip", false),
+		Provider:    supplied("embeddingProvider"),
+		Model:       supplied("embeddingModel"),
+		BaseURL:     supplied("embeddingBaseURL"),
+		APIKeyEnv:   supplied("embeddingApiKeyEnv"),
+		AuthHeader:  supplied("embeddingAuthHeader"),
+		AuthScheme:  supplied("embeddingAuthScheme"),
+		DocPrefix:   supplied("embeddingDocumentPrefix"),
+		QueryPrefix: supplied("embeddingQueryPrefix"),
+		Dimension:   supplied("embeddingDim"),
+		Context:     supplied("embeddingContext"),
+		Skip:        supplied("embeddingSkip"),
 	}
 }
