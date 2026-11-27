@@ -19,7 +19,7 @@ import (
 // indexerModuleVersion pins the indexer release that builds the fixture index. It
 // matches the version this module requires, so the test follows the same paths a
 // release build takes.
-const indexerModuleVersion = "v0.9.0"
+const indexerModuleVersion = "v1.0.0"
 
 var (
 	installIndexerOnce sync.Once
@@ -430,6 +430,10 @@ func TestOfflineIndexShapesResults(t *testing.T) {
 	}
 	if first["canonicalUrl"] != "https://example.test/pages/2001-canonical" {
 		t.Fatalf("canonicalUrl = %v, want the link the crawler recorded", first["canonicalUrl"])
+	}
+	if first["documentId"] != "default/2001" || first["sourceId"] != "default" || first["sourceType"] != "confluence" {
+		t.Fatalf("source fields = %v / %v / %v, want default/2001, default, confluence",
+			first["documentId"], first["sourceId"], first["sourceType"])
 	}
 
 	// Facets count the matching documents, not the returned rows: topK is 1 here.

@@ -13,7 +13,7 @@ MCP server that exposes [confluence2md-indexer](https://github.com/gkoos/conflue
 
 ## Requirements
 
-- A SQLite index at schema version 1, written by [confluence2md-indexer](https://github.com/gkoos/confluence2md-indexer) **v0.5.0 or newer**. This server links v0.9.0; an index from an older release is refused with a message naming the rebuild command.
+- A SQLite index at schema version 2, written by [confluence2md-indexer](https://github.com/gkoos/confluence2md-indexer) **v1.0.0 or newer**. This server links v1.0.0; an index from an older release is refused with a message naming the rebuild command.
 - Source content must use [`confluence2md`](https://github.com/gkoos/confluence2md) metadata format — other formats are not supported
 
 ## Environment Variables
@@ -38,7 +38,7 @@ The remaining `CONFLUENCE2MD_EMBEDDING_*` variables of the indexer are honoured 
 
 ## Upgrading an Index
 
-This server links `confluence2md-indexer` v0.9.0, and every indexer release since v0.5.0 writes the same schema version 1 — the one that introduced the document metadata columns. An index built by any of those releases keeps working without a rebuild. A database written by an older indexer is refused with a message naming the rebuild command:
+This server links `confluence2md-indexer` v1.0.0, which writes schema version 2: it added the source columns that let one index hold several sources, and it prefixes every document and chunk id with its source id. An index built by v1.0.0 or later keeps working without a rebuild, but **an index written by an earlier release (v0.x) is refused** and has to be rebuilt once, with a message naming the command:
 
 ```bash
 confluence2md-indexer index ./output --rebuild
@@ -249,7 +249,7 @@ Each `results[]` entry is the indexer's `Result` object: see [Output Reference �
 
 | Field | When |
 |---|---|
-| `rank`, `chunkId`, `documentId`, `pageId`, `title`, `localPath`, `spaceKey`, `sourceUrl`, `chunkText`, `chunkIndex`, `lexicalScore`, `vectorScore`, `fusedScore`, `fusion` | always |
+| `rank`, `chunkId`, `documentId`, `pageId`, `title`, `localPath`, `spaceKey`, `sourceId`, `sourceType`, `sourceUrl`, `chunkText`, `chunkIndex`, `lexicalScore`, `vectorScore`, `fusedScore`, `fusion` | always |
 | `canonicalUrl` | when the crawler recorded one; it is the link to open, never reconstructed from `sourceUrl` |
 | `baseChunkText`, `contextStartIndex`, `contextEndIndex`, `contextChunkCount` | when `expand` widened the result |
 | `chunkCount` | in `group: "document"` mode |
@@ -300,12 +300,14 @@ A chunk-level search with default arguments against a three-page fixture index:
   "results": [
     {
       "rank": 1,
-      "chunkId": "2001:000000",
-      "documentId": "2001",
+      "chunkId": "default/2001:000000",
+      "documentId": "default/2001",
       "pageId": "2001",
       "title": "Apple Runbook",
       "localPath": "apple.md",
       "spaceKey": "ENG",
+      "sourceId": "default",
+      "sourceType": "confluence",
       "sourceUrl": "https://example.test/pages/2001",
       "canonicalUrl": "https://example.test/pages/2001-canonical",
       "chunkText": "# Apple Runbook\n\nThe apple rotation happens on Mondays.",
@@ -317,12 +319,14 @@ A chunk-level search with default arguments against a three-page fixture index:
     },
     {
       "rank": 2,
-      "chunkId": "2002:000000",
-      "documentId": "2002",
+      "chunkId": "default/2002:000000",
+      "documentId": "default/2002",
       "pageId": "2002",
       "title": "On-call Handbook",
       "localPath": "oncall.md",
       "spaceKey": "OPS",
+      "sourceId": "default",
+      "sourceType": "confluence",
       "sourceUrl": "https://example.test/pages/2002",
       "chunkText": "# On-call Handbook\n\nEscalate the apple incident to the ops channel.",
       "chunkIndex": 0,
@@ -344,12 +348,14 @@ The same index with `group: "document"` and `query: "deployment"`: two chunks of
   "results": [
     {
       "rank": 1,
-      "chunkId": "2003:000000",
-      "documentId": "2003",
+      "chunkId": "default/2003:000000",
+      "documentId": "default/2003",
       "pageId": "2003",
       "title": "Deployment Runbook",
       "localPath": "deploy.md",
       "spaceKey": "ENG",
+      "sourceId": "default",
+      "sourceType": "confluence",
       "sourceUrl": "https://example.test/pages/2003",
       "chunkText": "# Deployment\n\nIntro text.",
       "chunkIndex": 0,
@@ -492,7 +498,7 @@ GOOS=linux GOARCH=amd64 go build -o bin/confluence2md-mcp-linux-amd64 .
 go test ./... -v
 ```
 
-The suite builds the server and drives it over stdio. Four offline end-to-end tests install the pinned indexer (`go install ...@v0.9.0`), build an index from a temporary corpus with the default `bow-local` provider, and check:
+The suite builds the server and drives it over stdio. Four offline end-to-end tests install the pinned indexer (`go install ...@v1.0.0`), build an index from a temporary corpus with the default `bow-local` provider, and check:
 
 - the tool list, `confluence.list_spaces`, and a search narrowed by space;
 - result shaping: `group: "document"` with `chunkCount`, `maxPerPage`, and `canonicalUrl`;
