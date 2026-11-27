@@ -16,7 +16,7 @@ var defaultFacetDimensions = []string{"space", "author"}
 // facetsTool registers confluence.facets: the same request surface as a search, but only
 // the shape of the matching set. A client asks "where does this query live" without
 // pulling chunk text into the conversation.
-func facetsTool(s *server.MCPServer, defaultDBPath string) {
+func facetsTool(s *server.MCPServer) {
 	tool := mcp.NewTool("confluence.facets",
 		append([]mcp.ToolOption{
 			mcp.WithDescription("Count the documents a search matches per space and author, without returning them"),
@@ -30,8 +30,7 @@ func facetsTool(s *server.MCPServer, defaultDBPath string) {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 
-		effectiveDBPath := getString(args, "dbPath", defaultDBPath)
-		req, err := queryRequestFromArgs(queryText, args, time.Now().UTC())
+		req, effectiveDBPath, err := buildQueryRequest(queryText, args, time.Now().UTC())
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}

@@ -20,7 +20,7 @@ import (
 // indexerModuleVersion pins the indexer release that builds the fixture index. It
 // matches the version this module requires, so the test follows the same paths a
 // release build takes.
-const indexerModuleVersion = "v1.0.0"
+const indexerModuleVersion = "v1.1.0"
 
 var (
 	installIndexerOnce sync.Once
@@ -477,6 +477,41 @@ func TestOfflineIndexShapesResults(t *testing.T) {
 	authors, ok := facets["author"].(map[string]any)
 	if !ok || authors["Ada Lovelace"] != float64(2) || authors["Grace Hopper"] != float64(1) {
 		t.Fatalf("author facets = %v, want Ada 2 and Grace 1", facets["author"])
+	}
+}
+
+// TestOfflineConfigFileSuppliesTheIndexAndDefaults runs the server with a config file and
+// no CONFLUENCE_INDEX_DB, then edits the file to show that no restart is needed.
+func TestOfflineConfigFileSuppliesTheIndexAndDefaults(t *testing.T) {
+	dbPath := buildIndex(t, writeCorpus(t))
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	writeConfigFile := func(topK int) {
+		body := fmt.Sprintf("db:\n  path: %q\nquery:\n  top_k: %d\n", filepath.ToSlash(dbPath), topK)
+		if err := os.WriteFile(configPath, []byte(body), 0o644); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+	}
+	writeConfigFile(1)
+
+	session := startSession(t, "", "CONFLUENCE_INDEX_DB=", "CONFLUENCE_INDEX_CONFIG="+configPath)
+
+	first := toolPayload(t, session.call(2, "confluence.search", map[string]any{"query": "apple", "mode": "lexical"}))
+	if first["count"] != float64(1) {
+		t.Fatalf("count = %v, want the configured top_k of 1", first["count"])
+	}
+	if got, _ := first["dbPath"].(string); got != filepath.ToSlash(dbPath) {
+		t.Fatalf("dbPath = %q, want the one from the file", got)
+	}
+
+	writeConfigFile(2)
+	second := toolPayload(t, session.call(3, "confluence.search", map[string]any{"query": "apple", "mode": "lexical"}))
+	if second["count"] != float64(2) {
+		t.Fatalf("count = %v, want 2 after the file changed without a restart", second["count"])
+	}
+
+	overridden := toolPayload(t, session.call(4, "confluence.search", map[string]any{"query": "apple", "mode": "lexical", "topK": 1}))
+	if overridden["count"] != float64(1) {
+		t.Fatalf("count = %v, want the topK argument to beat the file", overridden["count"])
 	}
 }
 
