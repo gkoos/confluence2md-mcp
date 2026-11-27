@@ -14,7 +14,7 @@ import (
 // was built from and the embedding identity behind its vectors. It is what turns "the
 // query failed" into "the index is empty, older than the crawl, or built with another
 // provider".
-func statsTool(s *server.MCPServer, defaultDBPath string) {
+func statsTool(s *server.MCPServer) {
 	tool := mcp.NewTool("confluence.stats",
 		mcp.WithDescription("Report an index's size, crawl freshness, metadata coverage and stored embedding identity"),
 		mcp.WithString("dbPath",
@@ -23,7 +23,10 @@ func statsTool(s *server.MCPServer, defaultDBPath string) {
 	)
 
 	s.AddTool(tool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		effectiveDBPath := getString(request.GetArguments(), "dbPath", defaultDBPath)
+		effectiveDBPath, err := dbPathFor(request.GetArguments())
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 
 		response, err := indexerapi.Stats(ctx, effectiveDBPath)
 		if err != nil {

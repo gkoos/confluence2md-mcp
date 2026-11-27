@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gkoos/confluence2md-indexer/pkg/indexerapi"
 )
 
 // The indexer messages below are quoted verbatim from confluence2md-indexer
@@ -90,7 +92,7 @@ func TestStatsErrorKeepsTheIndexerMessage(t *testing.T) {
 }
 
 func TestQueryRequestFromArgsDefaults(t *testing.T) {
-	req, err := queryRequestFromArgs("page", map[string]any{}, time.Now().UTC())
+	req, err := queryRequestFromArgs("page", map[string]any{}, time.Now().UTC(), builtinDefaults(t))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -125,7 +127,7 @@ func TestQueryRequestFromArgsMapsResultShaping(t *testing.T) {
 		"facets":     []any{"space", "author"},
 	}
 
-	req, err := queryRequestFromArgs("page", args, time.Now().UTC())
+	req, err := queryRequestFromArgs("page", args, time.Now().UTC(), builtinDefaults(t))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -142,7 +144,7 @@ func TestQueryRequestFromArgsMapsResultShaping(t *testing.T) {
 }
 
 func TestQueryRequestFromArgsAcceptsCommaSeparatedFacets(t *testing.T) {
-	req, err := queryRequestFromArgs("page", map[string]any{"facets": "space, author"}, time.Now().UTC())
+	req, err := queryRequestFromArgs("page", map[string]any{"facets": "space, author"}, time.Now().UTC(), builtinDefaults(t))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -171,7 +173,7 @@ func TestQueryRequestFromArgsMapsMetadataFilters(t *testing.T) {
 		"updatedSince":   "30d",
 	}
 
-	req, err := queryRequestFromArgs("page", args, now)
+	req, err := queryRequestFromArgs("page", args, now, builtinDefaults(t))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -200,7 +202,7 @@ func TestQueryRequestFromArgsMapsMetadataFilters(t *testing.T) {
 }
 
 func TestQueryRequestFromArgsAcceptsCommaSeparatedSpaces(t *testing.T) {
-	req, err := queryRequestFromArgs("page", map[string]any{"spaces": "ENG, OPS ,"}, time.Now().UTC())
+	req, err := queryRequestFromArgs("page", map[string]any{"spaces": "ENG, OPS ,"}, time.Now().UTC(), builtinDefaults(t))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -224,7 +226,7 @@ func TestQueryRequestFromArgsMapsEmbeddingOverrides(t *testing.T) {
 		"embeddingQueryPrefix":    "query: ",
 	}
 
-	req, err := queryRequestFromArgs("page", args, time.Now().UTC())
+	req, err := queryRequestFromArgs("page", args, time.Now().UTC(), builtinDefaults(t))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -248,7 +250,7 @@ func TestQueryRequestFromArgsMapsEmbeddingContext(t *testing.T) {
 	// selection is named here, exactly like the prefixes.
 	req, err := queryRequestFromArgs("page", map[string]any{
 		"embeddingContext": []any{"title", "space"},
-	}, time.Now().UTC())
+	}, time.Now().UTC(), builtinDefaults(t))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -274,7 +276,7 @@ func TestQueryRequestFromArgsRejectsInvalidArguments(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := queryRequestFromArgs("page", tc.args, time.Now().UTC()); err == nil {
+			if _, err := queryRequestFromArgs("page", tc.args, time.Now().UTC(), builtinDefaults(t)); err == nil {
 				t.Fatal("expected an error")
 			} else if !strings.Contains(err.Error(), tc.contains) {
 				t.Fatalf("error %q does not mention %q", err, tc.contains)
@@ -310,4 +312,15 @@ func TestUpdatedSinceBound(t *testing.T) {
 			}
 		})
 	}
+}
+
+// builtinDefaults is what the settings yield when no configuration file is set.
+func builtinDefaults(t *testing.T) indexerapi.QueryRequest {
+	t.Helper()
+
+	defaults, err := (&indexerapi.Settings{}).QueryDefaults()
+	if err != nil {
+		t.Fatalf("defaults: %v", err)
+	}
+	return defaults
 }

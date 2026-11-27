@@ -28,11 +28,6 @@ var version = "dev"
 const schemaVersion = indexerapi.OutputSchemaVersion
 
 func main() {
-	dbPath := os.Getenv("CONFLUENCE_INDEX_DB")
-	if dbPath == "" {
-		dbPath = "confluence2md-index.db"
-	}
-
 	s := server.NewMCPServer(
 		serverName,
 		version,
@@ -53,8 +48,7 @@ func main() {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 
-		effectiveDBPath := getString(args, "dbPath", dbPath)
-		req, err := queryRequestFromArgs(queryText, args, time.Now().UTC())
+		req, effectiveDBPath, err := buildQueryRequest(queryText, args, time.Now().UTC())
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -87,11 +81,17 @@ func main() {
 		return mcp.NewToolResultText(string(b)), nil
 	})
 
-	listSpacesTool(s, dbPath)
-	statsTool(s, dbPath)
-	facetsTool(s, dbPath)
+	listSpacesTool(s)
+	statsTool(s)
+	facetsTool(s)
 
-	log.Printf("starting %s %s: dbPath=%s", serverName, version, dbPath)
+	startupDB, err := dbPathFor(nil)
+	if err != nil {
+		// The file is read again on every call, so fixing it needs no restart.
+		log.Printf("warning: %v", err)
+		startupDB = defaultDBFile
+	}
+	log.Printf("starting %s %s: dbPath=%s", serverName, version, startupDB)
 	if err := server.ServeStdio(s); err != nil {
 		log.Printf("server error: %v", err)
 		os.Exit(1)
@@ -175,22 +175,26 @@ func getInt(args map[string]any, key string, fallback int) int {
 // Arguments win over the environment: the indexer fills only the embedding
 // fields this function leaves empty, so an override here cannot be undone by a
 // CONFLUENCE2MD_EMBEDDING_* variable.
-func queryRequestFromArgs(text string, args map[string]any, now time.Time) (indexerapi.QueryRequest, error) {
+func queryRequestFromArgs(text string, args map[string]any, now time.Time, defaults indexerapi.QueryRequest) (indexerapi.QueryRequest, error) {
 	req := indexerapi.QueryRequest{
 		Text:       text,
-		Mode:       getString(args, "mode", "hybrid"),
-		Fusion:     getString(args, "fusion", "weighted"),
-		Alpha:      getFloat(args, "alpha", 0.70),
-		RRFK:       getInt(args, "rrfK", 60),
-		TopK:       getInt(args, "topK", 10),
+		Mode:       getString(args, "mode", defaults.Mode),
+		Fusion:     getString(args, "fusion", defaults.Fusion),
+		Alpha:      getFloat(args, "alpha", defaults.Alpha),
+		RRFK:       getInt(args, "rrfK", defaults.RRFK),
+		TopK:       getInt(args, "topK", defaults.TopK),
 		Offset:     getInt(args, "offset", 0),
 		Limit:      getInt(args, "limit", 0),
-		CandidateK: getInt(args, "candidateK", 50),
-		Expand:     getInt(args, "expand", 0),
+		CandidateK: getInt(args, "candidateK", defaults.CandidateK),
+		Expand:     getInt(args, "expand", defaults.Expand),
 		Group:      getString(args, "group", ""),
 		MaxPerPage: getInt(args, "maxPerPage", 0),
 		Facets:     getStrings(args, "facets"),
+
+		SourceWeights: defaults.SourceWeights,
+		Priors:        defaults.Priors,
 	}
+	req.Priors.Now = now
 
 	if req.Group != "" && req.Group != "document" {
 		return indexerapi.QueryRequest{}, fmt.Errorf("group must be \"document\" when it is set")

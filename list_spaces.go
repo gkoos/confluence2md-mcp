@@ -26,7 +26,7 @@ const distinctSpacesQuery = `SELECT DISTINCT space_key FROM documents WHERE spac
 
 // listSpacesTool registers confluence.list_spaces, which lets a model discover the
 // spaces an index contains instead of guessing space keys for filters.
-func listSpacesTool(s *server.MCPServer, defaultDBPath string) {
+func listSpacesTool(s *server.MCPServer) {
 	tool := mcp.NewTool("confluence.list_spaces",
 		mcp.WithDescription("List the Confluence space keys present in a local SQLite index"),
 		mcp.WithString("dbPath",
@@ -35,7 +35,10 @@ func listSpacesTool(s *server.MCPServer, defaultDBPath string) {
 	)
 
 	s.AddTool(tool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		effectiveDBPath := getString(request.GetArguments(), "dbPath", defaultDBPath)
+		effectiveDBPath, err := dbPathFor(request.GetArguments())
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 
 		spaces, err := listSpaces(ctx, effectiveDBPath)
 		if err != nil {

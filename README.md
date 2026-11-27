@@ -13,14 +13,15 @@ MCP server that exposes [confluence2md-indexer](https://github.com/gkoos/conflue
 
 ## Requirements
 
-- A SQLite index at schema version 2, written by [confluence2md-indexer](https://github.com/gkoos/confluence2md-indexer) **v1.0.0 or newer**. This server links v1.0.0; an index from an older release is refused with a message naming the rebuild command.
+- A SQLite index at schema version 2, written by [confluence2md-indexer](https://github.com/gkoos/confluence2md-indexer) **v1.0.0 or newer**. This server links v1.1.0; an index from an older release is refused with a message naming the rebuild command.
 - Source content must use [`confluence2md`](https://github.com/gkoos/confluence2md) metadata format — other formats are not supported
 
 ## Environment Variables
 
 | Variable | Required | Description |
 |---|---|---|
-| `CONFLUENCE_INDEX_DB` | recommended | Path to the SQLite DB file. Falls back to `confluence2md-index.db` in the current working directory if unset. |
+| `CONFLUENCE_INDEX_DB` | recommended | Path to the SQLite DB file. Overrides `db.path` of the configuration file; falls back to `confluence2md-index.db` in the current working directory if neither is set. |
+| `CONFLUENCE_INDEX_CONFIG` | optional | Path to an indexer `config.yaml`. `CONFLUENCE2MD_CONFIG`, the variable the indexer CLI reads, works too. See [Configuration File](#configuration-file). |
 | `CONFLUENCE2MD_EMBEDDING_PROVIDER` | optional | `bow-local` (default: local, offline, no API key), `openai`, or `openai-compatible`. |
 | `CONFLUENCE2MD_EMBEDDING_MODEL` | optional | Model id, for example `text-embedding-3-small`. |
 | `CONFLUENCE2MD_EMBEDDING_DIM` | optional | Vector dimension such as `1024`. Part of the embedding identity. |
@@ -34,7 +35,19 @@ The remaining `CONFLUENCE2MD_EMBEDDING_*` variables of the indexer are honoured 
 
 > **The index and the query must agree on the embedding configuration.** An index records the identity of the vectors it holds (`provider:variant@dimension`, for example `bow-local:fnv1a@256`), while a hybrid or vector query resolves its own identity from these variables. When the two differ, the query fails with `embedding mismatch: ...` instead of returning weak results; the tool error names both identities and how to fix it. Use `mode: "lexical"` to search without embeddings at all.
 
-> This server reads environment variables only. The indexer CLI additionally accepts a `config.yaml`; if you indexed through a configuration file, export the equivalent `CONFLUENCE2MD_EMBEDDING_*` variables here so that both sides resolve the same provider.
+### Configuration File
+
+Set `CONFLUENCE_INDEX_CONFIG` (or `CONFLUENCE2MD_CONFIG`) to the `config.yaml` the indexer used and the server applies the same settings, so a query is answered the way `confluence2md-indexer query` would answer it. Without either variable no file is read: unlike the indexer CLI, the server never picks up a `config.yaml` from its working directory.
+
+The file supplies:
+
+- `db.path`, the index to open;
+- the `embedding` section, so the query resolves the identity the index was built with;
+- the `query` section: `mode`, `fusion`, `alpha`, `top_k`, `candidate_k`, `expand`, `priors`, `prior_strength`, `recency_half_life` and `source_weights`.
+
+Precedence, highest first: a tool argument, an environment variable, the file, the built-in default. The file is read again on every tool call, so an edit applies to the next call and **no restart is needed**; an unreadable or invalid file is reported as a tool error naming the file. The `sources` list of the file concerns indexing and is ignored. An embedding argument counts as set whenever the call supplies it, whatever its value, so `embeddingQueryPrefix: ""`, `embeddingDim: 0` or `embeddingSkip: false` clear or reset the configured value for that call.
+
+Configured `priors` and `source_weights` apply to every search and facets call, and a search then reports `metadataBoost`, `metadataFactors` and `sourceWeight` on its results. They are not tool arguments.
 
 ## Upgrading an Index
 
@@ -106,7 +119,7 @@ Search indexed Confluence content from a local SQLite DB.
 | Argument | Required | Description |
 |---|---|---|
 | `query` | ✓ | Search query text |
-| `dbPath` | | Override DB path. Falls back to `CONFLUENCE_INDEX_DB` env var, then to `confluence2md-index.db` in the current working directory. |
+| `dbPath` | | Override DB path. Falls back to `CONFLUENCE_INDEX_DB`, then to `db.path` of the configuration file, then to `confluence2md-index.db` in the current working directory. |
 | `mode` | | `hybrid` (default) \| `lexical` \| `vector` |
 | `fusion` | | `weighted` (default) \| `rrf` |
 | `alpha` | | Weighted fusion alpha `[0..1]`, default `0.70` |
@@ -167,7 +180,7 @@ List the Confluence space keys the index contains, so a client can scope a searc
 
 | Argument | Required | Description |
 |---|---|---|
-| `dbPath` | | Override DB path. Falls back to `CONFLUENCE_INDEX_DB`, then to `confluence2md-index.db` in the current working directory. |
+| `dbPath` | | Override DB path. Falls back to `CONFLUENCE_INDEX_DB`, then to `db.path` of the configuration file, then to `confluence2md-index.db` in the current working directory. |
 
 Response fields: `schemaVersion`, `tool`, `dbPath`, `count`, and `spaces` — a sorted array of space key strings, empty when the index holds no spaces.
 
@@ -177,7 +190,7 @@ Report what an index holds, the crawl it was built from and the embedding identi
 
 | Argument | Required | Description |
 |---|---|---|
-| `dbPath` | | Override DB path. Falls back to `CONFLUENCE_INDEX_DB`, then to `confluence2md-index.db` in the current working directory. |
+| `dbPath` | | Override DB path. Falls back to `CONFLUENCE_INDEX_DB`, then to `db.path` of the configuration file, then to `confluence2md-index.db` in the current working directory. |
 
 Response fields: `schemaVersion`, `tool`, `dbPath`, and `stats`. The `stats` object is the indexer's `stats --json` object unchanged — only the envelope is this server's (`tool` here, `command` there) — and it carries:
 
@@ -253,7 +266,7 @@ Each `results[]` entry is the indexer's `Result` object: see [Output Reference �
 | `canonicalUrl` | when the crawler recorded one; it is the link to open, never reconstructed from `sourceUrl` |
 | `baseChunkText`, `contextStartIndex`, `contextEndIndex`, `contextChunkCount` | when `expand` widened the result |
 | `chunkCount` | in `group: "document"` mode |
-| `metadataBoost`, `metadataFactors` | reserved for ranking priors, which this server does not expose yet |
+| `metadataBoost`, `metadataFactors`, `sourceWeight` | when the configuration file enables `priors` or `source_weights` |
 
 An empty result set is `[]`, never `null`, so a client can iterate it without a nil check. The `facets` block appears in a search payload only when the call asked for facets.
 
@@ -262,7 +275,7 @@ An empty result set is `[]`, never `null`, so a client can iterate it without a 
 `request` shows what the server sent to the indexer, not the arguments as you typed them:
 
 - Keys are the indexer's Go field names — `Text`, `Mode`, `RRFK`, `TopK`, `Limit`, `Filters.SpaceKey` — not the MCP argument names.
-- Embedding overrides are never echoed; the indexer tags them out of its request contract. Priors are excluded the same way, so they will not appear once they are exposed.
+- Embedding overrides are never echoed; the indexer tags them out of its request contract. Priors are excluded the same way, so configured priors do not appear in it.
 - `Filters` always carries `SpaceKey`, `PageID`, `FromDate`, `ToDate` and the internal `Candidate` limit. The metadata filters (`Spaces`, `Host`, `Author`, `CreatedBy`, `ModifiedBy`, `DepthMin`, `DepthMax`, `SeedOnly`, `HasAttachments`, `UpdatedSince`) use `omitempty`, so an unused one is absent rather than empty.
 - Values are as sent: `Limit` reads `0` even though the effective page size is `topK`.
 - `Group`, `MaxPerPage` and `Facets` are omitted when unset, so a default call's echo has no trace of them.
@@ -465,7 +478,7 @@ With `expand: 2`, the matched chunk arrives inside its window — `chunkText` is
 
 - **Chunk-level text.** A result carries a chunk, or a window of chunks with `expand`; no tool returns a whole page. `group: "document"` plus `expand` is the closest equivalent.
 - **Attachments and comments are metadata only.** The index stores their counts, so a search can filter on them but not read them.
-- **No ranking priors yet.** Recency, authority, seed, depth and richness weighting exist in the indexer but are not exposed as arguments; see gkoos/confluence2md-indexer#59.
+- **Ranking priors come from the configuration file only.** Recency, authority, seed, depth and richness weighting, and per-source weights, are set in `config.yaml` and are not tool arguments; see gkoos/confluence2md-indexer#59.
 - **No index build or refresh.** The server only reads. Building is `confluence2md-indexer index <folder>`, and `stats.corpus.crawlCompletedAt` is the crawl timestamp *stored at index time* — it cannot see a later crawl. To tell whether the index is behind, compare it with the crawler's current `metadata.json` (`last_completed_crawl_completed_at`).
 - **stdio only.** There is no HTTP or SSE transport.
 - **`confluence.list_spaces` is the one direct read.** It queries `documents.space_key` itself because `pkg/indexerapi` publishes no space list, and it returns keys only — no titles, counts or hierarchy.
@@ -498,7 +511,7 @@ GOOS=linux GOARCH=amd64 go build -o bin/confluence2md-mcp-linux-amd64 .
 go test ./... -v
 ```
 
-The suite builds the server and drives it over stdio. Four offline end-to-end tests install the pinned indexer (`go install ...@v1.0.0`), build an index from a temporary corpus with the default `bow-local` provider, and check:
+The suite builds the server and drives it over stdio. Four offline end-to-end tests install the pinned indexer (`go install ...@v1.1.0`), build an index from a temporary corpus with the default `bow-local` provider, and check:
 
 - the tool list, `confluence.list_spaces`, and a search narrowed by space;
 - result shaping: `group: "document"` with `chunkCount`, `maxPerPage`, and `canonicalUrl`;
