@@ -82,6 +82,7 @@ func main() {
 	})
 
 	listSpacesTool(s)
+	listSourcesTool(s)
 	statsTool(s)
 	facetsTool(s)
 
@@ -205,6 +206,7 @@ func queryRequestFromArgs(text string, args map[string]any, now time.Time, defau
 
 	req.Filters.SpaceKey = getString(args, "spaceKey", "")
 	req.Filters.Spaces = getStrings(args, "spaces")
+	req.Filters.Sources = getStrings(args, "sources")
 	req.Filters.PageID = getString(args, "pageId", "")
 	req.Filters.FromDate = getString(args, "fromDate", "")
 	req.Filters.ToDate = getString(args, "toDate", "")

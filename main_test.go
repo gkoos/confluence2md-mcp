@@ -201,6 +201,21 @@ func TestQueryRequestFromArgsMapsMetadataFilters(t *testing.T) {
 	}
 }
 
+func TestQueryRequestFromArgsMapsSources(t *testing.T) {
+	for name, value := range map[string]any{
+		"array":     []any{"wiki", "notes"},
+		"separated": "wiki, notes ,",
+	} {
+		req, err := queryRequestFromArgs("page", map[string]any{"sources": value}, time.Now().UTC(), builtinDefaults(t))
+		if err != nil {
+			t.Fatalf("%s: unexpected error: %v", name, err)
+		}
+		if len(req.Filters.Sources) != 2 || req.Filters.Sources[0] != "wiki" || req.Filters.Sources[1] != "notes" {
+			t.Fatalf("%s: sources = %v, want [wiki notes]", name, req.Filters.Sources)
+		}
+	}
+}
+
 func TestQueryRequestFromArgsAcceptsCommaSeparatedSpaces(t *testing.T) {
 	req, err := queryRequestFromArgs("page", map[string]any{"spaces": "ENG, OPS ,"}, time.Now().UTC(), builtinDefaults(t))
 	if err != nil {

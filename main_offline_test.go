@@ -20,7 +20,7 @@ import (
 // indexerModuleVersion pins the indexer release that builds the fixture index. It
 // matches the version this module requires, so the test follows the same paths a
 // release build takes.
-const indexerModuleVersion = "v1.1.0"
+const indexerModuleVersion = "v1.2.0"
 
 var (
 	installIndexerOnce sync.Once
@@ -512,6 +512,61 @@ func TestOfflineConfigFileSuppliesTheIndexAndDefaults(t *testing.T) {
 	overridden := toolPayload(t, session.call(4, "confluence.search", map[string]any{"query": "apple", "mode": "lexical", "topK": 1}))
 	if overridden["count"] != float64(1) {
 		t.Fatalf("count = %v, want the topK argument to beat the file", overridden["count"])
+	}
+}
+
+// TestOfflineMultiSourceIndexListsFiltersAndFacetsSources builds one index from a
+// Confluence corpus and a folder of plain files, then drives the source features.
+func TestOfflineMultiSourceIndexListsFiltersAndFacetsSources(t *testing.T) {
+	notes := t.TempDir()
+	if err := os.WriteFile(filepath.Join(notes, "notes.md"), []byte("# Notes\n\nA local apple note.\n"), 0o644); err != nil {
+		t.Fatalf("write notes: %v", err)
+	}
+
+	dbPath := filepath.Join(t.TempDir(), "multi.db")
+	cmd := exec.Command(indexerBinary(t), "index",
+		"--source", "wiki="+writeCorpus(t), "--source", "notes="+notes, "--db", dbPath, "--rebuild")
+	cmd.Env = append(os.Environ(), "CONFLUENCE2MD_EMBEDDING_PROVIDER=bow-local")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build multi-source index: %v\n%s", err, out)
+	}
+
+	session := startSession(t, dbPath)
+
+	listed := toolPayload(t, session.call(2, "confluence.list_sources", map[string]any{}))
+	if listed["count"] != float64(2) {
+		t.Fatalf("source count = %v, want 2: %v", listed["count"], listed)
+	}
+	sources, _ := listed["sources"].([]any)
+	byID := map[string]map[string]any{}
+	for _, raw := range sources {
+		entry, _ := raw.(map[string]any)
+		byID[fmt.Sprint(entry["id"])] = entry
+	}
+	if byID["wiki"]["type"] != "confluence" || byID["wiki"]["documents"] != float64(3) {
+		t.Fatalf("wiki source = %v, want confluence with 3 documents", byID["wiki"])
+	}
+	if byID["notes"]["type"] != "files" || byID["notes"]["documents"] != float64(1) || byID["notes"]["chunks"] == nil {
+		t.Fatalf("notes source = %v, want files with 1 document", byID["notes"])
+	}
+
+	filtered := toolPayload(t, session.call(3, "confluence.search", map[string]any{
+		"query": "apple", "mode": "lexical", "sources": []string{"notes"},
+	}))
+	results, _ := filtered["results"].([]any)
+	if len(results) != 1 {
+		t.Fatalf("filtered results = %v, want only the notes document", results)
+	}
+	first, _ := results[0].(map[string]any)
+	if first["sourceId"] != "notes" || first["sourceType"] != "files" || first["documentId"] != "notes/notes.md" {
+		t.Fatalf("filtered result = %v, want the notes file with a source-prefixed id", first)
+	}
+
+	faceted := toolPayload(t, session.call(4, "confluence.facets", map[string]any{"query": "apple", "mode": "lexical"}))
+	buckets, _ := faceted["facets"].(map[string]any)
+	bySource, ok := buckets["source"].(map[string]any)
+	if !ok || bySource["wiki"] != float64(2) || bySource["notes"] != float64(1) {
+		t.Fatalf("source facets = %v, want wiki 2 and notes 1", buckets["source"])
 	}
 }
 

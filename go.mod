@@ -3,7 +3,7 @@ module github.com/gkoos/confluence2md-mcp
 go 1.26.11
 
 require (
-	github.com/gkoos/confluence2md-indexer v1.1.0
+	github.com/gkoos/confluence2md-indexer v1.2.0
 	github.com/glebarez/go-sqlite v1.23.0
 	github.com/mark3labs/mcp-go v1.3.0
 )
