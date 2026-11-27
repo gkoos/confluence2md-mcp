@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -64,6 +65,26 @@ func TestQueryErrorAddsActionableGuidance(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A locked index is temporary, so every tool that reads one names it as retryable.
+func TestBusyIndexIsReportedAsRetryable(t *testing.T) {
+	busy := fmt.Errorf("acquire index lock: %w", indexerapi.ErrBusy)
+
+	for name, message := range map[string]string{
+		"search":       queryError("/tmp/index.db", busy),
+		"stats":        statsError("/tmp/index.db", busy),
+		"list_spaces":  withBusyGuidance("read spaces from /tmp/index.db: "+busy.Error(), busy),
+		"list_sources": withBusyGuidance("list_sources failed for /tmp/index.db: "+busy.Error(), busy),
+	} {
+		if !strings.Contains(message, busy.Error()) || !strings.Contains(message, "retry the call") {
+			t.Fatalf("%s: message %q must keep the indexer text and say to retry", name, message)
+		}
+	}
+
+	if got := withBusyGuidance("other failure", errors.New("other failure")); got != "other failure" {
+		t.Fatalf("a different failure must pass through unchanged, got %q", got)
 	}
 }
 
